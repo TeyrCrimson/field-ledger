@@ -1,0 +1,16 @@
+[project]
+name = "field-ledger"
+version = "0.1.0"
+description = "A shadow board for work in flight: stale branches and PRs."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+field-ledger = "field_ledger.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

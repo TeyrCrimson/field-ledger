@@ -10,7 +10,11 @@ dev = ["pytest"]
 
 [project.scripts]
 field-ledger = "field_ledger.cli:main"
+fl = "field_ledger.ledger.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "tests"]
+
+[tool.setuptools.packages.find]
+include = ["field_ledger*"]

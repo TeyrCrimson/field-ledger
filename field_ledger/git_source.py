@@ -4,7 +4,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from .model import Branch
+from .model import Branch, Commit
 
 SEP = "\x1f"  # unit separator: cannot appear in ref names or ISO dates
 REF_FORMAT = SEP.join(["%(refname:short)", "%(committerdate:iso-strict)", "%(authorname)"])
@@ -47,3 +47,18 @@ def is_merged(repo: Path, branch: str, base: str, remote: str = "origin") -> boo
     if result.returncode not in (0, 1):  # 0 = ancestor, 1 = not; anything else is a real error
         raise RuntimeError(result.stderr.strip())
     return result.returncode == 0
+
+
+def last_commit(repo: Path, branch: str, remote: str = "origin") -> Commit | None:
+    """Newest commit on `branch`, from the remote-tracking ref if there is one, else the
+    local branch. Reads only what is already on disk: no fetch, works offline.
+    None if neither ref exists."""
+    for ref in (f"refs/remotes/{remote}/{branch}", f"refs/heads/{branch}"):
+        result = subprocess.run(
+            ["git", "-C", str(repo), "log", "-1", f"--format=%H{SEP}%cI{SEP}%an{SEP}%s", ref, "--"],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            sha, date, author, subject = result.stdout.rstrip("\n").split(SEP)
+            return Commit(sha, datetime.fromisoformat(date), author, subject)
+    return None

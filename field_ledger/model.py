@@ -22,6 +22,14 @@ class Branch:
 
 
 @dataclass(frozen=True)
+class Commit:
+    sha: str
+    when: datetime          # committer date, timezone-aware
+    author: str
+    subject: str
+
+
+@dataclass(frozen=True)
 class PullRequest:
     branch: str             # head/source branch name
     number: int

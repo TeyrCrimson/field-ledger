@@ -1,6 +1,7 @@
 """Text grammar -> Command. Shared by the CLI, file import, and (later) the web page.
 
     MOVE <ITEM> [<FROM>] > <TO>     '->' also works. FROM and TO may contain spaces.
+                                    MOV is the same command (the design doc's spelling).
     WHERE <ITEM>
     AT <LOCATION>
     VOID <EVENT-ID> <reason...>
@@ -55,7 +56,7 @@ def parse_void(rest: str) -> Void:
 def parse(line: str) -> Command:
     keyword, _, rest = line.strip().partition(" ")
     keyword, rest = keyword.upper(), rest.strip()
-    if keyword == "MOVE":
+    if keyword in ("MOVE", "MOV"):
         return parse_move(rest)
     if keyword == "WHERE":
         return Where(item=parse_single(rest, keyword))

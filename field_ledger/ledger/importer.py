@@ -16,7 +16,9 @@ from .ids import canonical_item, canonical_location
 from .model import Move
 from .parse import ParseError, parse
 
-COMMAND_RE = re.compile(r"\b(MOVE|VOID|RENAME)\s.*$")
+# ponytail: '→' is deliberately not an arrow. The ledger shares `MOV BAT-12 → van` lines to
+# chat, and those are already in the ledger: re-imported, they show as rejected, never written.
+COMMAND_RE = re.compile(r"\b(MOVE?|VOID|RENAME)\s.*$")       # MOV = MOVE
 NAMESPACE = uuid.UUID("6f1c3a52-6f63-4b39-9a51-6c65646765f1")  # fixed: changing it breaks idempotency
 
 

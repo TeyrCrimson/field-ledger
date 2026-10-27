@@ -15,7 +15,8 @@ from .ids import canonical_item, canonical_location, suggest
 from .kit import Group, plan_kit, plan_more, read_kit
 from .model import At, Event, Kind, Move, Rename, Verdict, Void, Where
 from .parse import ParseError, parse
-from .state import items_at
+from .state import ancestors, items_at
+from .validate import canonical_destination
 
 TAG = {Kind.ACCEPT: "OK", Kind.WARN: "WARN", Kind.CONFIRM: "CONFIRM",
        Kind.REJECT: "REJECT", Kind.IGNORE: "IGNORED"}
@@ -84,14 +85,17 @@ def do_where(ctx: service.Context, cmd: Where) -> int:
         hint = suggest(item or cmd.item, set(state.items))
         print(f"REJECT\n  '{cmd.item}' is not in the kit." + (f" Did you mean {hint}?" if hint else ""))
         return 1
-    print(f"{item}: {state.where[item]}\n  last: {render_event(state.last_event[item])}")
+    *inside, location = ancestors(state, item)
+    held = f" (in {' in '.join(inside)})" if inside else ""
+    print(f"{item}: {location}{held}\n  last: {render_event(state.last_event[item])}")
     return 0
 
 
 def do_at(ctx: service.Context, cmd: At) -> int:
     state = service.current_state(ctx)
-    items = items_at(state, canonical_location(cmd.location))
-    print("\n".join(items) if items else f"Nothing logged at '{canonical_location(cmd.location)}'.")
+    target = canonical_destination(cmd.location, state)
+    items = items_at(state, target)
+    print("\n".join(items) if items else f"Nothing logged at '{target}'.")
     return 0
 
 
@@ -139,6 +143,9 @@ def do_list(events: list[Event]) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fl", description="Offline movement log for field kit.")
     p.add_argument("--db", type=Path, default=Path(os.environ.get("FL_DB", "field-ledger.db")))
+    p.add_argument("--ledger-dir", type=Path,
+                   default=Path(os.environ.get("FL_LEDGER_DIR", store.DEFAULT_LEDGER_DIR)),
+                   help="the ledger's own Git repo, which holds the record (default: ./ledger)")
     p.add_argument("--actor", help="who is logging (default: the name given to `fl init`)")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="create the ledger and set your name").add_argument("name")
@@ -166,6 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     rename.add_argument("new")
     sub.add_parser("import", help="import commands from a text/chat export").add_argument("file", type=Path)
     sub.add_parser("merge", help="merge another ledger file into this one").add_argument("file", type=Path)
+    sub.add_parser("rebuild", help="recreate the local cache from the event files")
     sub.add_parser("flags", help="every flagged event, newest first")
     log = sub.add_parser("log", help="recent events")
     log.add_argument("-n", type=int, default=20)
@@ -190,19 +198,26 @@ def to_command(args: argparse.Namespace):
 
 
 def make_context(args: argparse.Namespace, now: Callable[[], datetime]) -> service.Context:
+    if args.command == "init":
+        store.init_ledger(args.ledger_dir)
+    elif not (args.ledger_dir / ".git").exists():
+        raise SystemExit(f"No ledger at {args.ledger_dir}. Run `fl init <your-name>` first, "
+                         "or pass --ledger-dir.")
     conn = store.connect(args.db)
     device = store.ensure_device(conn)
+    store.sync(conn, args.ledger_dir)
     if args.command == "init":
         store.set_meta(conn, "actor", args.name)
     actor = args.actor or store.get_meta(conn, "actor")
     if not actor:
         raise SystemExit("No name set. Run `fl init <your-name>` first, or pass --actor.")
-    return service.Context(conn, actor, device, now)
+    return service.Context(conn, actor, device, now, args.ledger_dir)
 
 
 def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
     if args.command == "init":
-        print(f"OK\n  ledger: {args.db}  device: {ctx.device}  name: {ctx.actor}")
+        print(f"OK\n  ledger: {args.ledger_dir}  cache: {args.db}  device: {ctx.device}  "
+              f"name: {ctx.actor}")
         return 0
     if args.command == "kit":
         return do_kit(ctx, read_kit(args.file.read_text(encoding="utf-8")), plan_kit)
@@ -213,7 +228,12 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
     if args.command == "import":
         return do_import(ctx, args.file)
     if args.command == "merge":
-        print(f"OK\n  {store.merge(ctx.conn, args.file)} new event(s) merged.")
+        merged = store.merge(ctx.conn, args.file)
+        store.sync(ctx.conn, ctx.ledger_dir)
+        print(f"OK\n  {merged} new event(s) merged.")
+        return 0
+    if args.command == "rebuild":
+        print(f"OK\n  cache rebuilt: {store.rebuild(ctx.conn, ctx.ledger_dir)} event(s).")
         return 0
     if args.command == "flags":
         return do_list(service.flagged_events(service.current_state(ctx)))

@@ -5,7 +5,8 @@ from ledger_helpers import Clock
 
 
 def fl(db, *argv, ask=lambda _: False, clock=None):
-    return main(["--db", str(db), *argv], ask=ask, now=clock or Clock())
+    return main(["--db", str(db), "--ledger-dir", str(db.parent / "ledger"), *argv],
+                ask=ask, now=clock or Clock())
 
 
 def setup(tmp_path):
@@ -57,3 +58,30 @@ def test_no_name_set_stops_with_message(tmp_path):
     import pytest
     with pytest.raises(SystemExit, match="fl init"):
         fl(tmp_path / "fresh.db", "log")
+
+
+def test_where_shows_the_container(tmp_path, capsys):
+    db = setup(tmp_path)
+    fl(db, "add", "CAS", "1", "--at", "truck")
+    fl(db, "move", "BAT-01", "cas1")
+    fl(db, "move", "CAS-01", "van")
+    capsys.readouterr()
+    assert fl(db, "where", "BAT-01") == 0
+    assert capsys.readouterr().out.startswith("BAT-01: van (in CAS-01)")
+
+
+def test_rebuild_from_the_event_files(tmp_path, capsys):
+    db = setup(tmp_path)
+    db.unlink()
+    assert fl(db, "init", "teyr") == 0            # a fresh cache over the same ledger
+    capsys.readouterr()
+    assert fl(db, "rebuild") == 0
+    assert "3 event(s)" in capsys.readouterr().out
+    assert fl(db, "where", "BAT-03") == 0
+
+
+def test_no_ledger_stops_with_message(tmp_path):
+    import pytest
+    with pytest.raises(SystemExit, match="No ledger"):
+        main(["--db", str(tmp_path / "x.db"), "--ledger-dir", str(tmp_path / "none"),
+              "--actor", "teyr", "log"])

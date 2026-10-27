@@ -12,15 +12,15 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 from . import store
-from .ids import canonical_location
 from .importer import extract_commands, import_ids
 from .kit import PlannedAdd
 from .model import Event, Kind, Move, Rename, Verdict, Void
 from .parse import ParseError, parse
 from .state import State, fold
-from .validate import validate_move, validate_rename, validate_void
+from .validate import canonical_destination, validate_move, validate_rename, validate_void
 
 
 @dataclass
@@ -29,6 +29,7 @@ class Context:
     actor: str
     device: str
     now: Callable[[], datetime]
+    ledger_dir: Path                # the record; `conn` is its cache, synced on open
 
 
 @dataclass(frozen=True)
@@ -49,9 +50,12 @@ def current_state(ctx: Context) -> State:
     return fold(store.load(ctx.conn))
 
 
-def make_event(ctx: Context, kind: str, event_id: str | None = None, **fields) -> Event:
+def make_event(ctx: Context, kind: str, event_id: str | None = None, ahead: int = 0,
+               **fields) -> Event:
+    """`ahead` reserves seqs for events built in one batch before any of them is written."""
     return Event(id=event_id or str(uuid.uuid4()), ts=ctx.now(), device=ctx.device,
-                 seq=store.next_seq(ctx.conn, ctx.device), actor=ctx.actor, kind=kind, **fields)
+                 seq=store.next_seq(ctx.conn, ctx.device) + ahead, actor=ctx.actor, kind=kind,
+                 **fields)
 
 
 def should_write(verdict: Verdict, confirmed: bool) -> bool:
@@ -65,7 +69,7 @@ def write(ctx: Context, verdict: Verdict, kind: str, event_id: str | None,
     confirmed_flag = ("confirmed",) if verdict.kind == Kind.CONFIRM else ()
     event = make_event(ctx, kind, event_id, flags=verdict.flags + confirmed_flag + extra_flags,
                        **fields)
-    store.append(ctx.conn, event)
+    store.add(ctx.conn, ctx.ledger_dir, [event])
     return Outcome(verdict, event)
 
 
@@ -73,11 +77,13 @@ def write(ctx: Context, verdict: Verdict, kind: str, event_id: str | None,
 
 def submit_move(ctx: Context, cmd: Move, confirmed: bool = False,
                 event_id: str | None = None, extra_flags: tuple[str, ...] = ()) -> Outcome:
-    item, verdict = validate_move(cmd, ctx.actor, current_state(ctx), ctx.now())
+    state = current_state(ctx)
+    item, verdict = validate_move(cmd, ctx.actor, state, ctx.now())
     if not should_write(verdict, confirmed):
         return Outcome(verdict)
     return write(ctx, verdict, "MOVE", event_id, extra_flags, item=item,
-                 src=canonical_location(cmd.src), dst=canonical_location(cmd.dst))
+                 src=canonical_destination(cmd.src, state),
+                 dst=canonical_destination(cmd.dst, state))
 
 
 def submit_void(ctx: Context, cmd: Void, event_id: str | None = None,
@@ -99,12 +105,10 @@ def submit_rename(ctx: Context, cmd: Rename, event_id: str | None = None,
 def add_items(ctx: Context, planned: list[PlannedAdd]) -> list[Event]:
     """Kit creation. Items already in the kit are skipped (kit loading is re-runnable)."""
     existing = set(current_state(ctx).items)
-    written = []
-    for p in planned:
-        if p.item not in existing:
-            event = make_event(ctx, "ADD", item=p.item, dst=p.location, note=p.name)
-            store.append(ctx.conn, event)
-            written.append(event)
+    new = [p for p in planned if p.item not in existing]
+    written = [make_event(ctx, "ADD", ahead=n, item=p.item, dst=p.location, note=p.name)
+               for n, p in enumerate(new)]
+    store.add(ctx.conn, ctx.ledger_dir, written)      # one commit for the whole kit
     return written
 
 

@@ -4,8 +4,9 @@ Only UPPERCASE commands are picked up, anywhere in a line, so a chat line like
 `[17/10/26, 13:05] Teyr: MOVE BAT-07 > site-B` works but "we should move the truck"
 is ignored.
 
-Event ids are derived from the text itself (actor + line + how many times that exact
-line appeared before), so importing the same export twice adds nothing new.
+Event ids are derived from the text itself: the whole source line, chat timestamp and
+sender included, plus how many times that exact line appeared before. Not from who runs
+the import, so the same export imported twice, by anyone, adds nothing new.
 """
 
 import re
@@ -29,13 +30,16 @@ def extract_commands(text: str) -> list[tuple[int, str]]:
     return found
 
 
-def import_ids(actor: str, commands: list[tuple[int, str]]) -> list[str]:
-    """Deterministic id per command. Repeated identical lines get distinct ids."""
+def import_ids(text: str, commands: list[tuple[int, str]]) -> list[str]:
+    """Deterministic id per command, from its whole source line. Repeated identical lines
+    get distinct ids."""
+    source = text.splitlines()
     seen: dict[str, int] = {}
     ids = []
-    for _, line in commands:
+    for number, _ in commands:
+        line = source[number - 1].strip()
         seen[line] = seen.get(line, 0) + 1
-        ids.append(str(uuid.uuid5(NAMESPACE, f"{actor}|{line}|{seen[line]}")))
+        ids.append(str(uuid.uuid5(NAMESPACE, f"{line}|{seen[line]}")))
     return ids
 
 

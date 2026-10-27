@@ -54,6 +54,17 @@ def test_reimport_on_a_fresh_cache_adds_nothing(tmp_path):
     assert statuses(again) == ["already-imported", "already-imported", "rejected", "ignored"]
 
 
+def test_two_people_importing_the_same_export_add_nothing_twice(tmp_path):
+    ctx = make_ctx(tmp_path / "l.db", "teyr")
+    seed(ctx)
+    service.import_text(ctx, CHAT)
+    before = len(store.read_events(ctx.ledger_dir))
+    other = make_ctx(tmp_path / "l.db", "yoeng")
+    again = service.import_text(other, CHAT)
+    assert len(store.read_events(ctx.ledger_dir)) == before
+    assert statuses(again) == ["already-imported", "already-imported", "rejected", "ignored"]
+
+
 def test_moving_back_is_not_a_repeat():
     lines = extract_commands("MOVE BAT-01 > site-B\nMOVE BAT-01 > truck\nMOVE BAT-01 > Site-B\n"
                              "MOVE BAT-02 > van\nMOVE bat2 > VAN\n")

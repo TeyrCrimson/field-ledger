@@ -150,7 +150,7 @@ def import_text(ctx: Context, text: str) -> list[ImportLine]:
     known = store.existing_ids(ctx.conn)
     repeated = repeats(commands)
     return [import_line(ctx, n, line, eid, known, repeated.get(n))
-            for (n, line), eid in zip(commands, import_ids(ctx.actor, commands))]
+            for (n, line), eid in zip(commands, import_ids(text, commands))]
 
 
 def flagged_events(state: State) -> list[Event]:

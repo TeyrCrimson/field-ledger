@@ -31,9 +31,6 @@ CREATE TABLE IF NOT EXISTS events (
     note   TEXT NOT NULL DEFAULT '',
     flags  TEXT NOT NULL DEFAULT ''
 );
--- Import lines that were read but wrote no event (duplicates). Recorded so that
--- re-importing the same file never re-evaluates them against newer state.
-CREATE TABLE IF NOT EXISTS skipped_imports (id TEXT PRIMARY KEY);
 """
 COLUMNS = ("id", "ts", "device", "seq", "actor", "kind", "item", "src", "dst", "ref", "note", "flags")
 
@@ -97,15 +94,7 @@ def load(conn: sqlite3.Connection) -> list[Event]:
 
 
 def existing_ids(conn: sqlite3.Connection) -> set[str]:
-    """Ids of every event plus every import line already skipped as a duplicate."""
-    events = {r[0] for r in conn.execute("SELECT id FROM events")}
-    skipped = {r[0] for r in conn.execute("SELECT id FROM skipped_imports")}
-    return events | skipped
-
-
-def mark_skipped(conn: sqlite3.Connection, line_id: str) -> None:
-    conn.execute("INSERT OR IGNORE INTO skipped_imports (id) VALUES (?)", (line_id,))
-    conn.commit()
+    return {r[0] for r in conn.execute("SELECT id FROM events")}
 
 
 def merge(conn: sqlite3.Connection, other: Path) -> int:
@@ -232,8 +221,7 @@ def sync(conn: sqlite3.Connection, ledger_dir: Path) -> None:
 def rebuild(conn: sqlite3.Connection, ledger_dir: Path) -> int:
     """Throw the cached events away and reload them from the files. Returns the count.
 
-    Device id, name and the import skip-list stay: they are this laptop's settings,
-    not part of the record.
+    Device id and name stay: they are this laptop's settings, not part of the record.
     """
     events = read_events(ledger_dir)
     conn.execute("DELETE FROM events")

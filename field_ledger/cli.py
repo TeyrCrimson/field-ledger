@@ -1,15 +1,18 @@
 """Entry point: wire the sources, classifier and renderer together.
 
 Usage:
+    python -m field_ledger init
     python -m field_ledger --repo ~/github-repos/casio-edge --base origin/develop --prs gh
 """
 
 import argparse
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .classify import build_row, sort_rows
 from .git_source import is_merged, list_branches, run_git
+from .ledger import store
 from .model import Label
 from .pr_source import fetch_prs
 from .render import render_table
@@ -45,6 +48,22 @@ def collect(args: argparse.Namespace, now: datetime) -> list:
     return sort_rows(rows)
 
 
+def do_init(argv: list[str]) -> None:
+    """`field-ledger init`: create the ledger's own repo, outside this public one."""
+    p = argparse.ArgumentParser(prog="field-ledger init",
+                                description="Create the ledger's own Git repo.")
+    p.add_argument("--ledger-dir", type=Path, default=store.DEFAULT_LEDGER_DIR,
+                   help="where the ledger repo lives (default: ./ledger, gitignored)")
+    args = p.parse_args(argv)
+    created = store.init_ledger(args.ledger_dir)
+    print(f"OK\n  ledger: {args.ledger_dir}  ({'created' if created else 'already there'})")
+
+
 def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    # ponytail: one subcommand peeled off the front, so the flags-only board call
+    # keeps working unchanged. Switch to subparsers once there are three of these.
+    if argv and argv[0] == "init":
+        return do_init(argv[1:])
     args = parse_args(argv)
     print(render_table(collect(args, datetime.now(timezone.utc))))

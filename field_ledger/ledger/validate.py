@@ -9,9 +9,16 @@ from datetime import datetime, timedelta
 
 from .ids import canonical_item, canonical_location, suggest
 from .model import Kind, Move, Rename, Verdict, Void
-from .state import State, resolve
+from .state import State, ancestors, makes_cycle, resolve
 
 DUPLICATE_WINDOW = timedelta(minutes=2)
+
+
+def canonical_destination(raw: str, state: State) -> str:
+    """An item ID names a container (BAT-01 > CAS-01); anything else is a location.
+    Not alias-resolved: this is what gets stored, and renames apply at read time."""
+    item = canonical_item(raw)
+    return item if item in state.items else canonical_location(raw)
 
 
 # --- individual checks ---------------------------------------------------------
@@ -30,7 +37,7 @@ def check_item(raw: str, state: State) -> tuple[str | None, Verdict | None]:
 
 def check_destination(dst: str, state: State) -> Verdict | None:
     """Known: fine. Close to a known one: probably a typo, ask. Otherwise: new, flag it."""
-    if dst in state.locations:
+    if dst in state.locations or dst in state.items:
         return None
     hint = suggest(dst, state.locations)
     if hint:
@@ -40,8 +47,11 @@ def check_destination(dst: str, state: State) -> Verdict | None:
 
 
 def check_origin(item: str, src: str, state: State) -> Verdict | None:
-    """Stated origin disagrees with the log: someone moved it without logging. Flag, don't block."""
-    if not src or resolve(src, state.aliases) == state.where[item]:
+    """Stated origin disagrees with the log: someone moved it without logging. Flag, don't
+    block. Any level counts: BAT-01 in CAS-01 in the van is both 'from CAS-01' and 'from van'."""
+    if not src:
+        return None
+    if resolve(canonical_destination(src, state), state.aliases) in ancestors(state, item):
         return None
     return Verdict(Kind.WARN, (f"Log says {item} was at '{state.where[item]}', not '{src}'.",),
                    ("from-mismatch",))
@@ -53,6 +63,13 @@ def check_same_place(item: str, dst: str, state: State) -> Verdict | None:
     return Verdict(Kind.CONFIRM, (f"Log already has {item} at '{dst}'. "
                                   "Was it moved away and back without being logged?",),
                    ("same-place",))
+
+
+def check_cycle(item: str, dst: str, state: State) -> Verdict | None:
+    if not makes_cycle(state, item, dst):
+        return None
+    why = "that's itself" if dst == item else f"{dst} is inside {item}"
+    return Verdict(Kind.REJECT, (f"{item} can't go into {dst}: {why}.",))
 
 
 def check_duplicate(item: str, dst: str, actor: str, state: State,
@@ -86,14 +103,13 @@ def validate_move(cmd: Move, actor: str, state: State, now: datetime) -> tuple[s
     item, bad = check_item(cmd.item, state)
     if bad:
         return None, bad
-    dst = resolve(canonical_location(cmd.dst), state.aliases)
-    src = canonical_location(cmd.src)
-    duplicate = check_duplicate(item, dst, actor, state, now)
-    if duplicate:
-        return item, duplicate
+    dst = resolve(canonical_destination(cmd.dst, state), state.aliases)
+    stop = check_cycle(item, dst, state) or check_duplicate(item, dst, actor, state, now)
+    if stop:
+        return item, stop
     return item, combine([
         check_destination(dst, state),
-        check_origin(item, src, state),
+        check_origin(item, cmd.src, state),
         check_same_place(item, dst, state),
     ])
 

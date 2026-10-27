@@ -19,8 +19,12 @@ class Clock:
 
 
 def make_ctx(db: Path, actor: str = "teyr", clock: Clock | None = None) -> service.Context:
+    """A cache at `db` over its own ledger repo next to it (l.db -> l-ledger/)."""
+    ledger = db.with_name(f"{db.stem}-ledger")
+    store.init_ledger(ledger)
     conn = store.connect(db)
-    return service.Context(conn, actor, store.ensure_device(conn), clock or Clock())
+    store.sync(conn, ledger)
+    return service.Context(conn, actor, store.ensure_device(conn), clock or Clock(), ledger)
 
 
 def seed(ctx: service.Context) -> None:

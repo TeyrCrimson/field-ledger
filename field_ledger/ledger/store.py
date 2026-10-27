@@ -84,13 +84,12 @@ def next_seq(conn: sqlite3.Connection, device: str) -> int:
     return row.fetchone()[0] + 1
 
 
-def append(conn: sqlite3.Connection, event: Event) -> bool:
-    """Write one event. False if that id already exists (nothing changes)."""
+def cache(conn: sqlite3.Connection, events: list[Event]) -> None:
+    """Copy events into the cache. Ids already cached are left alone."""
     marks = ", ".join("?" * len(COLUMNS))
-    cur = conn.execute(f"INSERT OR IGNORE INTO events ({', '.join(COLUMNS)}) VALUES ({marks})",
-                       to_row(event))
+    conn.executemany(f"INSERT OR IGNORE INTO events ({', '.join(COLUMNS)}) VALUES ({marks})",
+                     [to_row(e) for e in events])
     conn.commit()
-    return cur.rowcount == 1
 
 
 def load(conn: sqlite3.Connection) -> list[Event]:
@@ -110,7 +109,11 @@ def mark_skipped(conn: sqlite3.Connection, line_id: str) -> None:
 
 
 def merge(conn: sqlite3.Connection, other: Path) -> int:
-    """Copy in every event from another ledger file. Returns how many were new."""
+    """Copy in every event from another ledger database. Returns how many were new.
+
+    Only the cache changes here; the next `sync` writes them to the record. Between two
+    ledgers that already use event files, `git pull` in the ledger repo does this job.
+    """
     before = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
     conn.execute("ATTACH DATABASE ? AS other", (str(other),))
     try:
@@ -173,22 +176,66 @@ def event_file(ledger_dir: Path, event_id: str) -> Path:
     return events_dir(ledger_dir) / f"{event_id}.json"
 
 
-def write_event(ledger_dir: Path, event: Event) -> bool:
-    """Write and commit one event file. False if that id is already on disk.
+def write_events(ledger_dir: Path, events: list[Event]) -> list[Event]:
+    """Write the event files and commit them together. Returns the ones that were new.
 
     An existing file is never rewritten, so replaying an import or re-syncing the
     same event changes nothing. That is the append-only rule, enforced in one place.
     """
-    path = event_file(ledger_dir, event.id)
-    if path.exists():
-        return False
-    path.write_text(to_json(event), encoding="utf-8")
-    run_git(ledger_dir, "add", "--", str(path.relative_to(ledger_dir)))
-    run_git(ledger_dir, "commit", "-q", "-m", f"{event.kind} {event.item or event.ref}".strip())
-    return True
+    new = [e for e in events if not event_file(ledger_dir, e.id).exists()]
+    if not new:
+        return []
+    for e in new:
+        event_file(ledger_dir, e.id).write_text(to_json(e), encoding="utf-8")
+    run_git(ledger_dir, "add", "--", EVENTS_DIR)
+    one = new[0]
+    message = f"{one.kind} {one.item or one.ref}".strip() if len(new) == 1 else f"{len(new)} events"
+    run_git(ledger_dir, "commit", "-q", "-m", message)
+    return new
+
+
+def write_event(ledger_dir: Path, event: Event) -> bool:
+    """Write and commit one event file. False if that id is already on disk."""
+    return bool(write_events(ledger_dir, [event]))
 
 
 def read_events(ledger_dir: Path) -> list[Event]:
     """Every event on disk. Read order does not matter: `state.fold` sorts."""
     return [from_json(p.read_text(encoding="utf-8"))
             for p in sorted(events_dir(ledger_dir).glob("*.json"))]
+
+
+# --- keeping the cache honest ----------------------------------------------------
+
+def add(conn: sqlite3.Connection, ledger_dir: Path, events: list[Event]) -> None:
+    """The one write path: the record first, then the cache. A crash between the two
+    leaves a file the cache lacks, which the next `sync` picks up."""
+    write_events(ledger_dir, events)
+    cache(conn, events)
+
+
+def sync(conn: sqlite3.Connection, ledger_dir: Path) -> None:
+    """Make the cache and the files hold the same events.
+
+    Files the cache lacks came from a `git pull` (or a crash mid-`add`): cache them.
+    Cached events with no file predate the event files or came in through `merge`:
+    write them, so the record is complete before anything is rebuilt from it.
+    """
+    on_disk = {p.stem for p in events_dir(ledger_dir).glob("*.json")}
+    cached = load(conn)
+    write_events(ledger_dir, [e for e in cached if e.id not in on_disk])
+    missing = on_disk - {e.id for e in cached}
+    cache(conn, [from_json(event_file(ledger_dir, i).read_text(encoding="utf-8"))
+                 for i in sorted(missing)])
+
+
+def rebuild(conn: sqlite3.Connection, ledger_dir: Path) -> int:
+    """Throw the cached events away and reload them from the files. Returns the count.
+
+    Device id, name and the import skip-list stay: they are this laptop's settings,
+    not part of the record.
+    """
+    events = read_events(ledger_dir)
+    conn.execute("DELETE FROM events")
+    cache(conn, events)
+    return len(events)

@@ -23,11 +23,13 @@ Python 3.10+, standard library only. Nothing to install on a field laptop.
 
 ```bash
 pip install -e .                     # installs the `fl` command
-fl init teyr                         # once per laptop: sets your name
+fl init teyr                         # once per laptop: creates ./ledger, sets your name
 fl kit kit.csv                       # create item groups (see "Items and IDs")
 fl move BAT-07 site-b                # log a move; prints the logged event and its ID
-fl where BAT-07
-fl at site-b
+fl move BAT-07 CAS-01                # an item ID as destination packs it into that case
+fl move CAS-01 van                   # ...and everything inside the case goes with it
+fl where BAT-07                      # BAT-07: van (in CAS-01)
+fl at site-b                         # everything there, including inside cases
 fl flags                             # everything that needs a second look
 fl void <event-id> "wrong battery"   # correct a mistake (history is kept)
 ```
@@ -222,7 +224,8 @@ the bot asks for one. A rough time beats none, and it's marked `prompted`.
 
 | Situation | What to do |
 |---|---|
-| No network at all | Every laptop logs to its own file. Afterwards: `fl merge other-laptop.db` |
+| No network at all | Every laptop logs to its own ledger repo. Afterwards: `git pull` in `ledger/` from the other laptop (or a USB `git bundle`); `fl` picks up the new event files on its next run |
+| An older ledger (SQLite only) | `fl merge other-laptop.db` copies its events in and writes them as event files |
 | Phones only | Type commands into chat or a notes app, then `fl import notes.txt` |
 
 `fl import` picks up UPPERCASE commands anywhere in a line, so a chat export line like
@@ -278,7 +281,9 @@ This tool's repo is **public**. Ledger data never goes in it.
   non-event. Give it a private or internal remote, or none on airgapped sites.
   Running `init` twice is safe: nothing already on disk is touched.
 - **The cache:** one SQLite file, `./field-ledger.db` (override with `--db` or `FL_DB`),
-  gitignored. Still what the `fl` commands read today; rebuildable from the event files.
+  gitignored. `fl` writes every event to the files first, then the cache, and picks up new
+  files (from a `git pull`) each time it starts. `fl rebuild` recreates it from the files;
+  `--ledger-dir` / `FL_LEDGER_DIR` point `fl` at a ledger elsewhere.
 
 ### Secrets
 

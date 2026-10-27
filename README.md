@@ -245,6 +245,10 @@ deploy feat/secure-cdr > DRONE-3      (planned)
 ```
 
 Branch age, last commit and merge state come from **local Git** and work offline and airgapped.
+
+```bash
+field-ledger show feat/secure-cdr --repo /path/to/repo   # age + last commit, no fetch
+```
 PR/MR status from GitHub or GitLab is optional and needs a token.
 
 ### Stale-work board (v0)

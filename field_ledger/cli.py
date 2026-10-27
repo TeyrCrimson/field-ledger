@@ -2,6 +2,7 @@
 
 Usage:
     python -m field_ledger init
+    python -m field_ledger show feat/x --repo ~/github-repos/casio-edge
     python -m field_ledger --repo ~/github-repos/casio-edge --base origin/develop --prs gh
 """
 
@@ -11,11 +12,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .classify import build_row, sort_rows
-from .git_source import is_merged, list_branches, run_git
+from .git_source import is_merged, last_commit, list_branches, run_git
 from .ledger import store
 from .model import Label
 from .pr_source import fetch_prs
-from .render import render_table
+from .render import render_show, render_table
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -59,11 +60,29 @@ def do_init(argv: list[str]) -> None:
     print(f"OK\n  ledger: {args.ledger_dir}  ({'created' if created else 'already there'})")
 
 
-def main(argv: list[str] | None = None) -> None:
+def do_show(argv: list[str], now: datetime) -> int:
+    """`field-ledger show <branch>`: derived state from local Git only, so it works offline."""
+    p = argparse.ArgumentParser(prog="field-ledger show",
+                                description="Branch age and last commit, from local Git.")
+    p.add_argument("branch")
+    p.add_argument("--repo", type=Path, default=Path("."), help="path to a local clone")
+    p.add_argument("--remote", default="origin")
+    args = p.parse_args(argv)
+    commit = last_commit(args.repo, args.branch, args.remote)
+    if commit is None:
+        print(f"REJECT\n  No branch '{args.branch}' in {args.repo} (local or {args.remote}/).")
+        return 1
+    print(render_show(args.branch, commit, now))
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int | None:
     argv = sys.argv[1:] if argv is None else argv
-    # ponytail: one subcommand peeled off the front, so the flags-only board call
+    # ponytail: subcommands peeled off the front, so the flags-only board call
     # keeps working unchanged. Switch to subparsers once there are three of these.
     if argv and argv[0] == "init":
         return do_init(argv[1:])
+    if argv and argv[0] == "show":
+        return do_show(argv[1:], datetime.now(timezone.utc))
     args = parse_args(argv)
     print(render_table(collect(args, datetime.now(timezone.utc))))

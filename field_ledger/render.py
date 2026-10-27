@@ -1,8 +1,10 @@
 """Turn rows into text. Markdown so it pastes cleanly into Telegram, Notion or a PR."""
 
 from collections import Counter
+from datetime import datetime
 
-from .model import Row
+from .classify import days_between
+from .model import Commit, Row
 
 HEADER = "| Label | Branch | Age (d) | Author | PR |\n|---|---|---|---|---|"
 
@@ -21,3 +23,10 @@ def render_summary(rows: list[Row]) -> str:
 def render_table(rows: list[Row]) -> str:
     body = "\n".join(render_row(r) for r in rows)
     return f"{render_summary(rows)}\n\n{HEADER}\n{body}" if rows else render_summary(rows)
+
+
+def render_show(branch: str, commit: Commit, now: datetime) -> str:
+    return (f"{branch}\n"
+            f"  age: {days_between(commit.when, now)} day(s) since the last commit\n"
+            f"  last commit: {commit.sha[:7]}  {commit.when:%Y-%m-%d %H:%M}  {commit.author}  "
+            f"{commit.subject}")

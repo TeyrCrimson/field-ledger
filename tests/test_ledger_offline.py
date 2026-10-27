@@ -1,6 +1,7 @@
 """The offline contingency: bulk import from text, and merging ledgers between laptops."""
 
 from field_ledger.ledger import service, store
+from field_ledger.ledger.importer import extract_commands, repeats
 from field_ledger.ledger.kit import Group, plan_more
 from field_ledger.ledger.model import Move
 from ledger_helpers import Clock, make_ctx, seed
@@ -35,7 +36,28 @@ def test_import_is_idempotent_even_after_time_passes(tmp_path):
     ctx.now.advance(hours=2)                                   # outside the double-tap window
     again = service.import_text(ctx, CHAT)
     assert len(store.load(ctx.conn)) == before
-    assert statuses(again) == ["already-imported", "already-imported", "rejected", "already-imported"]
+    assert statuses(again) == ["already-imported", "already-imported", "rejected", "ignored"]
+
+
+def test_reimport_on_a_fresh_cache_adds_nothing(tmp_path):
+    """A second laptop (or a deleted cache) has only the event files. The repeated line
+    must still be recognised as a repeat, not logged as a same-place move."""
+    ctx = make_ctx(tmp_path / "l.db", clock=Clock())
+    seed(ctx)
+    service.import_text(ctx, CHAT)
+    before = len(store.read_events(ctx.ledger_dir))
+    (tmp_path / "l.db").unlink()
+    fresh = make_ctx(tmp_path / "l.db", clock=Clock())
+    fresh.now.advance(hours=2)
+    again = service.import_text(fresh, CHAT)
+    assert len(store.read_events(fresh.ledger_dir)) == before
+    assert statuses(again) == ["already-imported", "already-imported", "rejected", "ignored"]
+
+
+def test_moving_back_is_not_a_repeat():
+    lines = extract_commands("MOVE BAT-01 > site-B\nMOVE BAT-01 > truck\nMOVE BAT-01 > Site-B\n"
+                             "MOVE BAT-02 > van\nMOVE bat2 > VAN\n")
+    assert repeats(lines) == {5: 4}
 
 
 def test_rejected_import_line_succeeds_after_item_is_added(tmp_path):

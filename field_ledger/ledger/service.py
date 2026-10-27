@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import store
-from .importer import extract_commands, import_ids
+from .importer import extract_commands, import_ids, repeats
 from .kit import PlannedAdd
 from .model import Event, Kind, Move, Rename, Verdict, Void
 from .parse import ParseError, parse
@@ -131,24 +131,25 @@ def import_status(outcome: Outcome) -> str:
     return "ignored" if outcome.verdict.kind == Kind.IGNORE else "rejected"
 
 
-def import_line(ctx: Context, line_no: int, text: str, event_id: str, known: set[str]) -> ImportLine:
+def import_line(ctx: Context, line_no: int, text: str, event_id: str, known: set[str],
+                repeat_of: int | None) -> ImportLine:
     if event_id in known:
         return ImportLine(line_no, text, "already-imported")
+    if repeat_of is not None:
+        return ImportLine(line_no, text, "ignored", (f"Repeats line {repeat_of}.",))
     try:
         cmd = parse(text)
     except ParseError as err:
         return ImportLine(line_no, text, "rejected", (str(err),))
     outcome = submit_any(ctx, cmd, event_id, ("unconfirmed-import",))
-    status = import_status(outcome)
-    if status == "ignored":          # remember it; rejected lines stay retryable (e.g. after `fl add`)
-        store.mark_skipped(ctx.conn, event_id)
-    return ImportLine(line_no, text, status, outcome.verdict.messages)
+    return ImportLine(line_no, text, import_status(outcome), outcome.verdict.messages)
 
 
 def import_text(ctx: Context, text: str) -> list[ImportLine]:
     commands = extract_commands(text)
     known = store.existing_ids(ctx.conn)
-    return [import_line(ctx, n, line, eid, known)
+    repeated = repeats(commands)
+    return [import_line(ctx, n, line, eid, known, repeated.get(n))
             for (n, line), eid in zip(commands, import_ids(ctx.actor, commands))]
 
 

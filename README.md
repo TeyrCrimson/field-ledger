@@ -230,7 +230,8 @@ the bot asks for one. A rough time beats none, and it's marked `prompted`.
 
 `fl import` picks up UPPERCASE commands anywhere in a line, so a chat export line like
 `[17/10/26, 13:05] Teyr: MOVE BAT-07 > site-B` works and ordinary chat is skipped. Re-running
-`merge` or `import` adds nothing twice. v0 limit: imported lines are attributed to the importer
+`merge` or `import` adds nothing twice, and a line that repeats the previous move of the same
+item (same destination) is ignored, judged from the text alone. v0 limit: imported lines are attributed to the importer
 and timestamped at import time.
 
 ---

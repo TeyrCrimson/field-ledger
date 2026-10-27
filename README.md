@@ -271,11 +271,14 @@ unit-tested but not yet run against a live repo; fork PRs are matched by branch 
 
 This tool's repo is **public**. Ledger data never goes in it.
 
-- **Planned:** each ledger is its own Git repo inside a gitignored folder (`ledger_dir`, default
-  `./ledger`), created by `field-ledger init`. One event file per move; Git gives history, merge
-  and offline commits. Give it a private or internal remote, or none on airgapped sites. SQLite is
-  only a cache, rebuilt from the events.
-- **v0:** one SQLite file, `./field-ledger.db` (override with `--db` or `FL_DB`), gitignored.
+- **The record:** each ledger is its own Git repo inside a gitignored folder (`ledger_dir`,
+  default `./ledger`), created by `field-ledger init` (`--ledger-dir` to put it elsewhere).
+  One JSON event file per move, committed as it is written; Git gives history, merge and
+  offline commits. A new file is never a merge conflict, so two people logging offline is a
+  non-event. Give it a private or internal remote, or none on airgapped sites.
+  Running `init` twice is safe: nothing already on disk is touched.
+- **The cache:** one SQLite file, `./field-ledger.db` (override with `--db` or `FL_DB`),
+  gitignored. Still what the `fl` commands read today; rebuildable from the event files.
 
 ### Secrets
 
@@ -307,7 +310,7 @@ Never commit them. Copying the token file is part of takeover.
 | `ledger/validate.py` | Accept/reject rules | yes |
 | `ledger/kit.py` | Kit file, numbering | yes |
 | `ledger/importer.py` | Finding commands in text | yes |
-| `ledger/store.py` | SQLite, merge (to become the event-file store) | no |
+| `ledger/store.py` | Event files (the record), SQLite cache, merge | no |
 | `ledger/service.py` | Validate, then write | no |
 | `ledger/cli.py` | `fl` command | no |
 

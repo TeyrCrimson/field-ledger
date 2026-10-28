@@ -15,6 +15,7 @@ whichever it was given, and anything not an item is treated as the top of the ch
 """
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from .model import Event
 
@@ -28,6 +29,8 @@ class State:
     fixed: set[str] = field(default_factory=set)               # location nodes: hold nodes, rarely move
     aliases: dict[str, str] = field(default_factory=dict)      # old location -> new
     labels: dict[str, str] = field(default_factory=dict)       # build -> security label (SEC)
+    chain_before: dict[str, list[str]] = field(default_factory=dict)  # move id -> item's ancestors then
+    carried: dict[str, set[str]] = field(default_factory=dict)  # move id -> every node it moved
     voided: set[str] = field(default_factory=set)
     events: list[Event] = field(default_factory=list)          # live (non-voided) events, in order
 
@@ -85,7 +88,11 @@ def apply(state: State, event: Event) -> None:
             state.fixed.add(event.item)
     # ponytail: a cycle can only arrive from two offline devices; it is skipped here
     # (the event stays in the log, voidable) until the conflicts view can show it.
-    moves = event.kind == "MOVE" and not makes_cycle(state, event.item, event.dst)
+    moves = event.kind in ("MOVE", "RESOLVE") and not makes_cycle(state, event.item, event.dst)
+    if moves:                           # the ⚠ rule needs what each move saw and carried
+        state.chain_before[event.id] = ancestors(state, event.item)
+        state.carried[event.id] = {event.item} | {
+            n for n in state.where if event.item in ancestors(state, n)}
     # An ADD with no destination is a node with nothing above it yet: a location, or a
     # branch waiting for its first deploy. It stays out of `where` so it has no parent.
     if (event.kind == "ADD" and event.dst) or moves:
@@ -98,6 +105,54 @@ def apply(state: State, event: Event) -> None:
     elif event.kind == "SEC":           # latest wins; a voided one never gets here
         state.labels[event.item] = event.dst
     state.events.append(event)
+
+
+def conflicts(state: State, device_window: timedelta,
+              import_window: timedelta) -> dict[str, tuple[str, str]]:
+    """Node -> (where the log has it, the other candidate): README "When two moves disagree".
+
+    Two live moves conflict on a node when both affect its location (directly, or by
+    moving a container it was in), within the window (the wider one if either time is
+    import/prompted), to different places, from different devices or with either time
+    approximate. Same destination is a duplicate; one device's own moves are ordered by
+    its seq. A later move or a RESOLVE of the node settles it: latest wins again.
+    Pure, computed on every replay, never stored. The windows are passed in.
+    """
+    # ponytail: pairwise over moves, O(n²); index moves by node if ledgers get big
+    moves = [e for e in state.events if e.kind == "MOVE" and e.id in state.carried]
+    found: dict[str, tuple[int, str, str]] = {}           # node -> (index of later move, a, b)
+    for i, a in enumerate(moves):
+        for j in range(i + 1, len(moves)):
+            b = moves[j]
+            loose = {a.time_source, b.time_source} & {"import", "prompted"}
+            if abs(b.ts - a.ts) > (import_window if loose else device_window):
+                continue
+            if a.device == b.device and not loose:
+                continue
+            if resolve(a.dst, state.aliases) == resolve(b.dst, state.aliases):
+                continue
+            shared = state.carried[a.id] & state.carried[b.id]
+            if b.item in state.chain_before[a.id]:      # b moved the container a's item was in
+                shared.add(a.item)
+            if a.item in state.chain_before[b.id]:
+                shared.add(b.item)
+            for node in shared:
+                found[node] = (state.events.index(b), placed_by(a, node), placed_by(b, node))
+    settled = {e.item: k for k, e in enumerate(state.events) if e.kind in ("MOVE", "RESOLVE")}
+    result = {}
+    for node, (k, one, two) in found.items():
+        if settled.get(node, -1) > k:                   # moved or resolved since
+            continue
+        here = state.where.get(node, "")
+        other = one if resolve(one, state.aliases) != here else two
+        if resolve(other, state.aliases) != here:
+            result[node] = (here, resolve(other, state.aliases))
+    return result
+
+
+def placed_by(move: Event, node: str) -> str:
+    """Where `move` puts `node`: its destination, or (moving a container) still inside it."""
+    return move.dst if move.item == node else move.item
 
 
 def finish(state: State) -> State:

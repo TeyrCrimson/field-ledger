@@ -31,11 +31,12 @@ CREATE TABLE IF NOT EXISTS events (
     note   TEXT NOT NULL DEFAULT '',
     sha    TEXT NOT NULL DEFAULT '',
     batch  TEXT NOT NULL DEFAULT '',
+    time_source TEXT NOT NULL DEFAULT '',
     flags  TEXT NOT NULL DEFAULT ''
 );
 """
 COLUMNS = ("id", "ts", "device", "seq", "actor", "kind", "item", "src", "dst", "ref", "note",
-           "sha", "batch", "flags")
+           "sha", "batch", "time_source", "flags")
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -74,6 +75,7 @@ def ensure_device(conn: sqlite3.Connection) -> str:
 def to_row(event: Event) -> tuple:
     return (event.id, event.ts.isoformat(), event.device, event.seq, event.actor, event.kind,
             event.item, event.src, event.dst, event.ref, event.note, event.sha, event.batch,
+            event.time_source,
             ",".join(event.flags))
 
 

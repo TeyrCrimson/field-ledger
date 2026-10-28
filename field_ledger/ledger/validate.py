@@ -52,6 +52,14 @@ def not_found(raw: str, state: State) -> str:
 SEC_LABELS = ("CRIT", "HIGH", "MED", "LOW", "NA")
 
 
+def holds_things(node: str, state: State) -> bool:
+    """A place always can; an item only if its kind is a container kind; a build never."""
+    if node not in state.items or node in state.fixed:
+        return True
+    item = canonical_item(node)
+    return item is not None and item.split("-")[0] in state.containers
+
+
 # --- individual checks ---------------------------------------------------------
 
 def check_item(raw: str, state: State) -> tuple[str | None, Verdict | None]:
@@ -78,6 +86,16 @@ def check_id_destination(raw: str, state: State) -> Verdict | None:
         return Verdict(Kind.REJECT, (not_found(raw, state),))
     return Verdict(Kind.CONFIRM, (f"'{place}' looks like an item ID, but there is no {prefix} "
                                   f"kit. A new place?",), ("id-shaped",))
+
+
+def check_container(dst: str, state: State) -> Verdict | None:
+    """Packing BAT-01 into BAT-02 is a slip, not a move: only container kinds hold things."""
+    if holds_things(dst, state):
+        return None
+    item = canonical_item(dst)
+    fix = (f" `fl kind {item.split('-')[0]} container yes` makes its kind one."
+           if item else "")
+    return Verdict(Kind.REJECT, (f"{dst} can't hold things.{fix}",))
 
 
 def check_destination(dst: str, state: State) -> Verdict | None:
@@ -162,7 +180,8 @@ def validate_move(cmd: Move, actor: str, state: State, now: datetime) -> tuple[s
     if shape and shape.kind == Kind.REJECT:
         return item, shape
     dst = resolve(canonical_destination(cmd.dst, state), state.aliases)
-    stop = check_cycle(item, dst, state) or check_duplicate(item, dst, actor, state, now)
+    stop = (check_container(dst, state) or check_cycle(item, dst, state)
+            or check_duplicate(item, dst, actor, state, now))
     if stop:
         return item, stop
     return item, combine([
@@ -207,6 +226,9 @@ def validate_resolve(raw: str, pick: str, state: State,
 def validate_deploy(branch: str, dst: str, state: State) -> Verdict:
     """A deploy is a move of a branch node, except that the node may not exist yet, so
     `check_item` does not apply. Everything else about a move does."""
+    bad = check_container(dst, state)
+    if bad:
+        return bad
     if branch not in state.items:
         return check_destination(dst, state) or Verdict(Kind.ACCEPT)
     return check_cycle(branch, dst, state) or combine([

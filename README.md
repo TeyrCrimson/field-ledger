@@ -31,7 +31,7 @@ pip install -e .                     # installs the `fl` command
 fl init teyr                         # once per laptop: creates ./ledger, sets your name
 fl kit kit.csv                       # create item groups (see "Items and IDs")
 fl move BAT-07 site-b                # log a move; prints the logged event and its ID
-fl move BAT-07 CAS-01                # an item ID as destination packs it into that case
+fl move BAT-07 CAS-01                # packs it into the case (CAS must be a container kind)
 fl move CAS-01 van                   # ...and everything inside the case goes with it
 fl where BAT-07                      # BAT-07: van (in CAS-01)
 fl resolve BAT-07 van                # settle a ⚠ when two devices disagree
@@ -92,12 +92,14 @@ IDs are `KIND-NN`: a 3-letter prefix and a number (`BAT-07`, `GAZ-03`).
 - Kit file:
 
   ```csv
-  prefix,name,count,location
-  BAT,Battery,12,truck
-  CAM,SIYI camera,3,case-1
+  prefix,name,count,location,container
+  BAT,Battery,12,truck,
+  CAM,SIYI camera,3,case-1,
+  CAS,Pelican case,2,truck,yes
   ```
 
-  Creates `BAT-01`..`BAT-12` and `CAM-01`..`CAM-03`. Re-running the same file changes nothing;
+  Creates `BAT-01`..`BAT-12`, `CAM-01`..`CAM-03` and `CAS-01`..`CAS-02`; cases can hold things
+  (`container` is `yes`, `no`, or blank to leave the kind as it is). Re-running the same file changes nothing;
   raising a count only adds the missing items. `fl add BAT 2 --at truck` adds BAT-13, BAT-14.
 
 Status: **v0** pads to 2 digits (fixed). `id_digits` is **planned**.
@@ -244,8 +246,9 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
 **Using the board.** On first open a phone asks "Who are you?": pick your name, or add it once
 ("I'm new"). That name goes on every move you log. Then:
 
-- **Move:** tap a card, then tap a place (or another card, to pack it inside). On a laptop, drag
-  it. Or type where it went in the bar at the bottom.
+- **Move:** tap a card, then tap a place, or a card whose kind holds things (a case, a van) to
+  pack it inside; tapping any other card picks that one instead. On a laptop, drag it. Or type
+  where it went in the bar at the bottom.
 - **Readback:** every write shows `✓ BAT-03 · Blue 6S · was in truck → van` with **Undo**.
   "Undo my last" in the header works for 10 minutes.
 - **Asked first:** the same rules as `fl`. A new ID-shaped place or a fixed location asks
@@ -255,6 +258,12 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
   place, without the CLI.
 
 `fl people` lists the names; `fl people add <name>` adds one; `fl init` adds its own.
+
+**Which kinds hold things.** Only a container kind can have things packed into its items: a case,
+a van, a drone a build is deployed onto. A kind holds nothing until someone says so, in the kit
+file's `container` column (`yes`/`no`), with `fl add CAS 2 --at truck --container`,
+`fl kind CAS container yes|no`, or the board's "+ Add items". Places always hold things;
+builds never do. `fl move BAT-01 BAT-02` is refused: `BAT-02 can't hold things`.
 
 **What it serves.** `GET /state.json` is the replayed state: every node with its place, container
 chain and last event; a build's commit and label; any ⚠ with both places; the People list.

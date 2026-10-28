@@ -2,8 +2,9 @@
 // and take callbacks, each with its own markup and style, so a design pass swaps those files
 // (and tokens.css) without touching this one or the hub.
 //
-// Moving: tap a card to pick it, then tap a place or another card (to pack it inside);
-// on a laptop, drag it there. Every write goes through api.js to the hub, which answers with
+// Moving: tap a card to pick it, then tap a place, or a card that holds things (a case, a
+// van: its kind says so) to pack it inside. Tapping any other card picks that one instead.
+// On a laptop, drag it there. Every write goes through api.js to the hub, which answers with
 // the same rules as `fl`: refused, asked (a confirm), or logged (a readback with Undo).
 import { me, post, setName } from "./api.js";
 import { actionBar, css as actionCss } from "./components/actionbar.js";
@@ -119,7 +120,8 @@ function onBoardTap(event) {
   const card = event.target.closest(".card");
   if (card) {
     if (!selected) return select(card.dataset.id);
-    return card.dataset.id === selected ? select(null) : moveTo(card.dataset.id);
+    if (card.dataset.id === selected) return select(null);
+    return nodeById(card.dataset.id)?.container ? moveTo(card.dataset.id) : select(card.dataset.id);
   }
   const place = event.target.closest(".column");
   if (place) moveTo(place.dataset.place);
@@ -140,7 +142,8 @@ function wireBoard() {
   board.addEventListener("drop", (event) => {
     event.preventDefault();
     const card = event.target.closest(".card");
-    moveTo(card ? card.dataset.id : event.target.closest(".column")?.dataset.place);
+    const into = card && nodeById(card.dataset.id)?.container;   // else: that card's place
+    moveTo(into ? card.dataset.id : event.target.closest(".column")?.dataset.place);
   });
 }
 

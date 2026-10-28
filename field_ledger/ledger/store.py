@@ -187,6 +187,23 @@ def write_setting(ledger_dir: Path, key: str, value: str) -> None:
     commit_settings(ledger_dir, {**stored_settings(ledger_dir), key: value}, f"set {key} = {value}")
 
 
+def read_containers(ledger_dir: Path) -> set[str]:
+    """Kinds (3-letter prefixes) whose items can hold other things: a case, a van, a drone.
+    A kind nobody has set can't: a battery is never a place to put things."""
+    kinds = stored_settings(ledger_dir).get("kinds", {})
+    return {prefix for prefix, kind in kinds.items() if kind.get("container")}
+
+
+def set_container(ledger_dir: Path, prefix: str, container: bool) -> None:
+    stored = stored_settings(ledger_dir)
+    kinds = stored.get("kinds", {})
+    if kinds.get(prefix, {}).get("container", False) == container:
+        return
+    kinds[prefix] = {**kinds.get(prefix, {}), "container": container}
+    commit_settings(ledger_dir, {**stored, "kinds": kinds},
+                    f"kind {prefix}: container {'yes' if container else 'no'}")
+
+
 def read_people(ledger_dir: Path) -> list[str]:
     """The ledger's People list: the names phones pick from, so logged_by is never a typo."""
     return list(stored_settings(ledger_dir).get("people", []))

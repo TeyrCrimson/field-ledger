@@ -133,7 +133,7 @@ def test_deploy_into_an_existing_fixed_location_node(repo, tmp_path, capsys):
 
 def test_deploy_onto_an_item_node(repo, tmp_path, capsys):
     """An item is a container (stage 2), so a build can sit on DRN-03 itself."""
-    assert ledger(tmp_path, "add", "DRN", "3", "--at", "store") == 0
+    assert ledger(tmp_path, "add", "DRN", "3", "--at", "store", "--container") == 0
     capsys.readouterr()
     assert deploy(tmp_path, repo, "pending", "drn-03") == 0
     assert "→ DRN-03" in capsys.readouterr().out

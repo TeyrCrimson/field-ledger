@@ -75,7 +75,7 @@ security labels from a scanner (set by hand for now).
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install pytest
-.venv/bin/python -m pytest -q      # baseline: 101 passed on main (2026-10-28)
+.venv/bin/python -m pytest -q      # all green; the count only grows (102 on 2026-10-28)
 ```
 
 - Every change keeps the whole suite green and adds tests for its own behaviour.

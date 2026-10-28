@@ -71,4 +71,5 @@ class Event:
     dst: str = ""             # MOVE/ADD: location. RENAME: new name.
     ref: str = ""             # VOID: target event id
     note: str = ""            # VOID: reason. ADD: group name.
+    sha: str = ""             # MOVE of a branch node: its head commit when it was deployed
     flags: tuple[str, ...] = field(default=())

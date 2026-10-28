@@ -8,6 +8,10 @@ corrected name.
 Contents follow their container. An item's `where` is its immediate parent, which
 can be another item (BAT-01 in CAS-01); its location is found by walking up. So
 moving a case is one event, and everything inside it has moved too.
+
+A node flagged `fixed` is a location: it holds nodes and has nothing above it. Older
+ledgers name locations with a plain string instead, which still works: `where` holds
+whichever it was given, and anything not an item is treated as the top of the chain.
 """
 
 from dataclasses import dataclass, field
@@ -21,6 +25,7 @@ class State:
     where: dict[str, str] = field(default_factory=dict)        # item -> parent: location or item
     last_event: dict[str, Event] = field(default_factory=dict) # item -> latest ADD/MOVE
     locations: set[str] = field(default_factory=set)           # every resolved location seen
+    fixed: set[str] = field(default_factory=set)               # location nodes: hold nodes, rarely move
     aliases: dict[str, str] = field(default_factory=dict)      # old location -> new
     voided: set[str] = field(default_factory=set)
     events: list[Event] = field(default_factory=list)          # live (non-voided) events, in order
@@ -66,17 +71,23 @@ def makes_cycle(state: State, item: str, dst: str) -> bool:
 
 
 def location_of(state: State, item: str) -> str:
-    return ancestors(state, item)[-1]
+    """Top of the chain. '' for a node that has not been placed anywhere yet."""
+    chain = ancestors(state, item)
+    return chain[-1] if chain else ""
 
 
 def apply(state: State, event: Event) -> None:
     """Apply one live event. Location fields are stored raw; resolved in `finish`."""
+    if event.kind == "ADD":
+        state.items[event.item] = event.note
+        if "fixed" in event.flags:
+            state.fixed.add(event.item)
     # ponytail: a cycle can only arrive from two offline devices; it is skipped here
     # (the event stays in the log, voidable) until the conflicts view can show it.
     moves = event.kind == "MOVE" and not makes_cycle(state, event.item, event.dst)
-    if event.kind == "ADD" or moves:
-        if event.kind == "ADD":
-            state.items[event.item] = event.note
+    # An ADD with no destination is a node with nothing above it yet: a location, or a
+    # branch waiting for its first deploy. It stays out of `where` so it has no parent.
+    if (event.kind == "ADD" and event.dst) or moves:
         state.where[event.item] = event.dst
         state.last_event[event.item] = event
         if event.dst not in state.items:

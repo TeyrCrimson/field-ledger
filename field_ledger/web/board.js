@@ -31,6 +31,7 @@ document.head.append(style);
 
 let latest = { places: [], nodes: [], people: [], needs_look: [] };
 let selected = null;                                    // the picked node's id
+let held = false;                                       // a refresh came while a card was picked
 
 const $ = (id) => document.getElementById(id);
 const nodeById = (id) => latest.nodes.find((node) => node.id === id);
@@ -108,6 +109,7 @@ function select(id) {
   })] : []));
   const bar = $("actionbar").firstElementChild;            // toasts sit above the bar, never on it
   $("toasts").style.bottom = bar ? `${bar.offsetHeight + 8}px` : "";
+  if (!id && held) render();
 }
 
 function cardFor(node) {
@@ -123,7 +125,11 @@ function cardFor(node) {
   return card;
 }
 
+// Never under a picked card: replacing the cards mid-drag can cancel the drop (seen once on
+// a laptop, 2026-10-28). The newest state waits until the card is dropped or let go.
 function render() {
+  held = Boolean(selected);
+  if (held) return;
   const byPlace = new Map(latest.places.map((place) => [place, []]));
   for (const node of latest.nodes) {
     if (node.location) byPlace.get(node.location).push(node);   // a place itself has none
@@ -210,7 +216,8 @@ async function refresh() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     latest = await response.json();
     render();
-    $("status").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    $("status").textContent = held ? "Changes are waiting: drop or cancel the picked card to see them."
+                                   : `Updated ${new Date().toLocaleTimeString()}`;
   } catch (error) {
     $("status").textContent = `Can't reach the hub (${error.message}). Showing the last board.`;
     return renderHeader();

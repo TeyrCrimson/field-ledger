@@ -35,6 +35,20 @@ def canonical_destination(raw: str, state: State) -> str:
     return node_id(raw, state) or canonical_location(raw)
 
 
+def not_found(raw: str, state: State) -> str:
+    """Why `raw` names no node. A missing KIND-NN is a kit typo or an item never added;
+    anything else is a build or location name, and a build only exists from its first
+    deploy (and is gone again if that deploy is undone)."""
+    item = canonical_item(raw)
+    hint = suggest(item or raw.strip(), set(state.items))
+    if item is not None:
+        tail = f" Did you mean {hint}?" if hint else " Add it first with `fl add`."
+        return f"{item} is not in the kit.{tail}"
+    tail = f" Did you mean {hint}?" if hint else ""
+    return (f"'{raw.strip()}' is not in the ledger. Items look like BAT-07; a build appears "
+            f"at its first deploy.{tail}")
+
+
 # --- individual checks ---------------------------------------------------------
 
 def check_item(raw: str, state: State) -> tuple[str | None, Verdict | None]:
@@ -42,12 +56,7 @@ def check_item(raw: str, state: State) -> tuple[str | None, Verdict | None]:
     node = node_id(raw, state)
     if node is not None:
         return node, None
-    item = canonical_item(raw)
-    if item is None:
-        return None, Verdict(Kind.REJECT, (f"'{raw}' is not an item ID (expected e.g. BAT-07)",))
-    hint = suggest(item, set(state.items))
-    tail = f" Did you mean {hint}?" if hint else " Add it first with `fl add`."
-    return None, Verdict(Kind.REJECT, (f"{item} is not in the kit.{tail}",))
+    return None, Verdict(Kind.REJECT, (not_found(raw, state),))
 
 
 def check_destination(dst: str, state: State) -> Verdict | None:

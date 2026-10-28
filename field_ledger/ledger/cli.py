@@ -11,12 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import service, store
-from .ids import canonical_item, canonical_location, suggest
+from .ids import canonical_location
 from .kit import Group, plan_kit, plan_more, read_kit
 from .model import At, Event, Kind, Move, Rename, Verdict, Void, Where
 from .parse import ParseError, parse
 from .state import ancestors, items_at
-from .validate import canonical_destination, node_id
+from .validate import canonical_destination, node_id, not_found
 
 TAG = {Kind.ACCEPT: "OK", Kind.WARN: "WARN", Kind.CONFIRM: "CONFIRM",
        Kind.REJECT: "REJECT", Kind.IGNORE: "IGNORED"}
@@ -82,8 +82,7 @@ def do_where(ctx: service.Context, cmd: Where) -> int:
     state = service.current_state(ctx)
     item = node_id(cmd.item, state)
     if item is None:
-        hint = suggest(canonical_item(cmd.item) or cmd.item, set(state.items))
-        print(f"REJECT\n  '{cmd.item}' is not in the kit." + (f" Did you mean {hint}?" if hint else ""))
+        print(f"REJECT\n  {not_found(cmd.item, state)}")
         return 1
     if item not in state.where:
         print(f"{item}: nowhere yet")

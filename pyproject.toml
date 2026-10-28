@@ -18,3 +18,6 @@ pythonpath = [".", "tests"]
 
 [tool.setuptools.packages.find]
 include = ["field_ledger*"]
+
+[tool.setuptools.package-data]
+field_ledger = ["web/*.html", "web/*.css", "web/*.js", "web/components/*.js"]

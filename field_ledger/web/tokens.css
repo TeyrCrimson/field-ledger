@@ -1,0 +1,83 @@
+/* Design tokens and page layout. A design pass starts here: components read these
+   variables and never hard-code a colour, size or font of their own. */
+
+:root {
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --text: #1c1e21;
+  --muted: #565c63;
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --line: #d7dade;
+  --accent: #1f5fbf;
+  --warn: #7a4f00;
+  --warn-bg: #fff3d1;
+
+  --sec-crit: #b3261e;
+  --sec-high: #b23c0b;
+  --sec-med: #8a5800;
+  --sec-low: #2f6f3e;
+  --sec-na: #565c63;
+
+  --space: 0.75rem;
+  --radius: 8px;
+  --column-min: 16rem;
+  --tap: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e6e7ea;
+    --muted: #a3a9b1;
+    --bg: #16181c;
+    --surface: #202329;
+    --line: #353a42;
+    --accent: #7fb0ff;
+    --warn: #ffd27a;
+    --warn-bg: #3a2e12;
+    --sec-crit: #ff8a80;
+    --sec-high: #ffab70;
+    --sec-med: #f2c55c;
+    --sec-low: #8fd19e;
+    --sec-na: #a3a9b1;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space);
+  padding: var(--space) calc(var(--space) * 1.5);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.bar h1 { margin: 0; font-size: 1.1rem; }
+.bar p { margin: 0; color: var(--muted); font-size: 0.875rem; }
+
+/* A column per place on a laptop; one stacked column on a phone. */
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--column-min), 1fr));
+  gap: var(--space);
+  align-items: start;
+  padding: var(--space);
+}
+
+@media (max-width: 40rem) {
+  .board { grid-template-columns: 1fr; }
+}

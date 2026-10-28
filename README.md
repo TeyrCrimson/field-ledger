@@ -228,10 +228,48 @@ hand over, except that anyone may claim ownership once a nudge has gone unanswer
 | Piece | What it is |
 |---|---|
 | **Network** | A travel router (preferred) or a phone hotspot. Laptops join as normal clients. Don't use a laptop hotspot |
-| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation) |
+| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation). **v0**: serves the board read-only (see "The hub" below) |
 | **Phones** | Open the board in a browser and add it to the home screen. Moves queue on the phone if the hub is unreachable and send when it's back |
 | **Relay** | When phones can't reach the hub (company or public Wi-Fi, or no hub on site), moves go through the Telegram bot. The hub fetches them over outbound HTTPS. The bot carries moves; it is never the record |
 | **Backup** | The hub pushes the ledger repo when it has internet |
+
+### The hub (v0: read-only)
+
+```bash
+field-ledger serve                             # this laptop: http://127.0.0.1:8765/
+field-ledger serve --lan                       # phones on the field network too; prints the address
+field-ledger serve --web-dir ~/designs/board   # try a design without touching the repo
+```
+
+It serves two things: `/state.json`, the replayed state (every node with its place, container
+chain, a build's commit and label, any ⚠ with both places), and the board from
+`field_ledger/web/`. That folder is plain files with no build step: `tokens.css` (colours,
+spacing, type) and one ES module per component in `components/`, each carrying its own markup
+and style, put together by `board.js`. A design pass swaps files there. `/state.json` is the
+contract it must keep. The board refreshes every 10 seconds; nothing can be changed from it yet.
+
+**Reaching it from phones.** Phones and the hub join the travel router. Then:
+
+- **Ubuntu laptop:** `--lan` is enough. If `ufw` is on: `sudo ufw allow 8765/tcp`.
+- **Windows laptop, hub in WSL2:** WSL2's default (NAT) networking hides the hub from the
+  network, and `serve --lan` says so. One-time fix, either:
+  1. **Mirrored networking** (Windows 11 22H2 or later). Put this in `%UserProfile%\.wslconfig`,
+     run `wsl --shutdown`, then allow the port in an admin PowerShell:
+     ```
+     [wsl2]
+     networkingMode=mirrored
+     ```
+     ```powershell
+     New-NetFirewallHyperVRule -Name field-ledger -DisplayName "field-ledger hub" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 8765
+     ```
+  2. **Port proxy** (any Windows; redo it after each WSL restart, because WSL's address
+     changes). In an admin PowerShell, with the address `hostname -I` prints inside WSL:
+     ```powershell
+     netsh interface portproxy add v4tov4 listenport=8765 listenaddress=0.0.0.0 connectport=8765 connectaddress=<WSL address>
+     New-NetFirewallRule -DisplayName "field-ledger hub" -Direction Inbound -Protocol TCP -LocalPort 8765 -Action Allow
+     ```
+
+  Not yet tried on our laptops: check it before the first field deployment.
 
 ### Takeover: the hub laptop dies
 
@@ -457,7 +495,9 @@ Never commit them. Copying the token file is part of takeover.
 | `ledger/store.py` | Event files (the record), SQLite cache, merge | no |
 | `ledger/service.py` | Validate, then write | no |
 | `ledger/cli.py` | `fl` command; opening a ledger, shared with code mode | no |
-| `cli.py` | `field-ledger` command: board, `show`, `deploy`, `label`, `undo` | no |
+| `cli.py` | `field-ledger` command: board, `show`, `deploy`, `label`, `undo`, `serve` | no |
+| `hub.py` | The hub: `/state.json` and the web front end; read-only for now | no |
+| `web/` | The board: `tokens.css`, `components/*.js`, `board.js`. No build step | (front end) |
 
 ## Tests
 

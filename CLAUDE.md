@@ -43,7 +43,9 @@ security labels from a scanner (set by hand for now).
 - **Contents follow their container** in one event. **Every move is cycle-checked.**
 - **Location and state change through separate events.** Bulk items are one node with a count.
 - IDs are `KIND-NN`; number width is the `id_digits` setting (default 2).
-- Event types: MOV, AUD, SEC, CFG, RESOLVE, VOID, RENAME, OWNER.
+- Event types: ADD, MOVE, AUD, SEC, CFG, RESOLVE, VOID, RENAME, OWNER.
+- **Owner handover:** only the current owner writes OWNER, except anyone may claim after a
+  nudge has gone unanswered for `nudge_after`.
 - Event fields: id, type, item, to, logged_by, moved_by (defaults to logged_by), actor_source
   (device | telegram | import), device, occurred_at, recorded_at, time_source (device |
   prompted | import), source (+ original text for imports).
@@ -66,7 +68,7 @@ security labels from a scanner (set by hand for now).
 | `id_digits` | `2` |
 | `undo_minutes` | `10` |
 | `conflict_window` | 5 min device / 60 min prompted or import |
-| `nudge_after` | 2 working days |
+| `nudge_after` | 1 working day |
 | `ledger_dir` | `./ledger` |
 
 ## Working here

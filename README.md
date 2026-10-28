@@ -200,7 +200,9 @@ A ⚠ item shows the latest location plus the other candidate. One tap confirms 
 ledger's **field-ops owner**.
 
 **Every ledger has a field-ops owner**, picked from the People list when the ledger is created.
-Nothing can be moved until one is set. Handover is its own event (`OWNER teyr → ivan`).
+Nothing can be moved until one is set. Handover is its own event (`OWNER teyr → ivan`). Only the current owner can
+hand over, except that anyone may claim ownership once a nudge has gone unanswered for
+`nudge_after`; the claim is an ordinary, attributed `OWNER` event.
 
 ---
 
@@ -327,7 +329,7 @@ Never commit them. Copying the token file is part of takeover.
 | `id_digits` | `2` | Minimum width of the ID number |
 | `undo_minutes` | `10` | How long the one-tap Undo is offered |
 | `conflict_window` | `5 min` device / `60 min` prompted or import | How close two moves must be to get a ⚠ |
-| `nudge_after` | `2` working days | When an unresolved ⚠ nudges the field-ops owner |
+| `nudge_after` | `1` working day | When an unresolved ⚠ nudges the field-ops owner |
 | `ledger_dir` | `./ledger` | Where the ledger's own repo lives |
 
 ---

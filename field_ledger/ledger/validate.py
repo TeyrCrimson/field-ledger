@@ -62,6 +62,17 @@ def check_item(raw: str, state: State) -> tuple[str | None, Verdict | None]:
     return None, Verdict(Kind.REJECT, (not_found(raw, state),))
 
 
+def check_id_destination(raw: str, state: State) -> Verdict | None:
+    """An ID-shaped destination names an item. If there is no such item it's a typo, not
+    a new place: `DRN-03` used to become a location 'drn-03' with only a flag. A place an
+    older ledger already knows by that name still works."""
+    if canonical_item(raw) is None or node_id(raw, state) is not None:
+        return None
+    if resolve(canonical_location(raw), state.aliases) in state.locations:
+        return None
+    return Verdict(Kind.REJECT, (not_found(raw, state),))
+
+
 def check_destination(dst: str, state: State) -> Verdict | None:
     """Known: fine. Close to a known one: probably a typo, ask. Otherwise: new, flag it."""
     if dst in state.locations or dst in state.items:
@@ -140,6 +151,9 @@ def validate_move(cmd: Move, actor: str, state: State, now: datetime) -> tuple[s
     item, bad = check_item(cmd.item, state)
     if bad:
         return None, bad
+    bad = check_id_destination(cmd.dst, state)
+    if bad:
+        return item, bad
     dst = resolve(canonical_destination(cmd.dst, state), state.aliases)
     stop = check_cycle(item, dst, state) or check_duplicate(item, dst, actor, state, now)
     if stop:

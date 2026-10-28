@@ -46,22 +46,22 @@ def repo(tmp_path):
 # --- deploy and the readback ---------------------------------------------------
 
 def test_deploy_readback_shows_the_previous_location(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
-    assert capsys.readouterr().out.startswith("✓ pending · build · was in hq → drn-03, deployed as ")
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
+    assert capsys.readouterr().out.startswith("✓ pending · build · was in hq → drone-3, deployed as ")
     assert deploy(tmp_path, repo, "pending", "site-b") == 0
-    assert "✓ pending · build · was in drn-03 → site-b" in capsys.readouterr().out
+    assert "✓ pending · build · was in drone-3 → site-b" in capsys.readouterr().out
 
 
 def test_deploy_makes_a_build_node_and_logs_where_it_came_from(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     assert deploy(tmp_path, repo, "pending", "site-b") == 0
     state = fold(read_events(tmp_path / "ledger"))
     assert state.items["pending"] == "build"
     first, second = [e for e in state.events if e.kind == "MOVE"]
-    assert (first.src, second.src) == ("hq", "drn-03")       # a new build starts at home
+    assert (first.src, second.src) == ("hq", "drone-3")       # a new build starts at home
     capsys.readouterr()
     assert ledger(tmp_path, "where", "pending") == 0
-    assert "pending  drn-03 > site-b" in capsys.readouterr().out
+    assert "pending  drone-3 > site-b" in capsys.readouterr().out
 
 def test_build_home_is_a_ledger_setting(repo, tmp_path, capsys):
     assert ledger(tmp_path, "set", "build_home", "Lab") == 0
@@ -69,9 +69,9 @@ def test_build_home_is_a_ledger_setting(repo, tmp_path, capsys):
     last = subprocess.run(["git", "-C", str(tmp_path / "ledger"), "log", "-1", "--format=%s"],
                           capture_output=True, text=True, check=True).stdout.strip()
     assert last == "set build_home = lab"                  # shared through the ledger repo
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
-    assert "· build · was in lab → drn-03" in capsys.readouterr().out
-    assert location_of(fold(read_events(tmp_path / "ledger")), "pending") == "drn-03"
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
+    assert "· build · was in lab → drone-3" in capsys.readouterr().out
+    assert location_of(fold(read_events(tmp_path / "ledger")), "pending") == "drone-3"
 
 
 def test_a_move_records_where_the_log_last_had_it(repo, tmp_path, capsys):
@@ -81,25 +81,25 @@ def test_a_move_records_where_the_log_last_had_it(repo, tmp_path, capsys):
     assert "BAT-01  van > site-b" in capsys.readouterr().out
 
 def test_deploy_records_the_head_commit_at_the_time(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     deployed = capsys.readouterr().out.split("deployed as ")[1].split()[0]
     git(repo, "checkout", "pending")
     commit(repo, "later work")                       # the branch has moved on...
     git(repo, "push", "origin", "pending")
     assert show(tmp_path, repo, "pending") == 0
     out = capsys.readouterr().out
-    assert f"at drn-03, deployed as {deployed}" in out      # ...the deployed commit has not
+    assert f"at drone-3, deployed as {deployed}" in out      # ...the deployed commit has not
     assert f"last commit: {deployed}" not in out
 
 
 def test_deploy_without_the_code_clone_says_commit_unknown(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "feat/elsewhere", "drn-03") == 0
+    assert deploy(tmp_path, repo, "feat/elsewhere", "drone-3") == 0
     out = capsys.readouterr().out
-    assert "✓ feat/elsewhere · build · was in hq → drn-03, commit unknown" in out
+    assert "✓ feat/elsewhere · build · was in hq → drone-3, commit unknown" in out
     assert show(tmp_path, repo, "pending") == 0      # and the deploy is really in the ledger
     capsys.readouterr()
     assert ledger(tmp_path, "where", "feat/elsewhere") == 0
-    assert capsys.readouterr().out.startswith("feat/elsewhere: drn-03")
+    assert capsys.readouterr().out.startswith("feat/elsewhere: drone-3")
 
 
 def test_deploy_never_fetches(tmp_path, capsys):
@@ -107,7 +107,7 @@ def test_deploy_never_fetches(tmp_path, capsys):
     work = make_repo(tmp_path)
     assert ledger(tmp_path, "init", "teyr") == 0
     (tmp_path / "remote.git").rename(tmp_path / "gone")
-    assert deploy(tmp_path, work, "pending", "drn-03") == 0
+    assert deploy(tmp_path, work, "pending", "drone-3") == 0
     assert "commit unknown" not in capsys.readouterr().out
 
 
@@ -167,29 +167,29 @@ def test_plain_string_locations_keep_working(tmp_path):
 
 def test_undo_inside_the_window(repo, tmp_path, capsys):
     clock = Clock()
-    assert deploy(tmp_path, repo, "pending", "drn-03", clock=clock) == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3", clock=clock) == 0
     clock.advance(minutes=9)
     capsys.readouterr()
     assert main(["undo", "--ledger-dir", str(tmp_path / "ledger"),
                  "--db", str(tmp_path / "l.db")], now=clock) == 0
     out = capsys.readouterr().out
-    assert "Took back 4 events from one command." in out      # hq, drn-03, the build, the move
+    assert "Took back 4 events from one command." in out      # hq, drone-3, the build, the move
     state = fold(read_events(tmp_path / "ledger"))
     assert "pending" not in state.items and state.fixed == set()
 
 
 def test_undo_leaves_a_node_someone_has_used_since(repo, tmp_path, capsys):
-    """Yoeng put a battery in drn-03 after my deploy made it: drn-03 stays, my move goes."""
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    """Yoeng put a battery in drone-3 after my deploy made it: drone-3 stays, my move goes."""
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     assert ledger(tmp_path, "--actor", "yoeng", "add", "BAT", "1", "--at", "van") == 0
-    assert ledger(tmp_path, "--actor", "yoeng", "move", "BAT-01", "drn-03") == 0
+    assert ledger(tmp_path, "--actor", "yoeng", "move", "BAT-01", "drone-3") == 0
     capsys.readouterr()
     assert main(["undo", "--ledger-dir", str(tmp_path / "ledger"),
                  "--db", str(tmp_path / "l.db")], now=Clock()) == 0
-    assert "Kept drn-03: used since by someone else." in capsys.readouterr().out
+    assert "Kept drone-3: used since by someone else." in capsys.readouterr().out
     state = fold(read_events(tmp_path / "ledger"))
-    assert state.fixed == {"drn-03"} and "pending" not in state.items
-    assert location_of(state, "BAT-01") == "drn-03"
+    assert state.fixed == {"drone-3"} and "pending" not in state.items
+    assert location_of(state, "BAT-01") == "drone-3"
 
 
 def test_undo_takes_back_a_whole_kit(tmp_path):
@@ -212,7 +212,7 @@ def test_undo_takes_back_a_whole_import(tmp_path):
 
 def test_a_missing_build_is_not_called_kit(repo, tmp_path, capsys):
     """A build only exists from its first deploy; after undoing that, `where` says so."""
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     assert main(["undo", "--ledger-dir", str(tmp_path / "ledger"),
                  "--db", str(tmp_path / "l.db")], now=Clock()) == 0
     capsys.readouterr()
@@ -223,14 +223,14 @@ def test_a_missing_build_is_not_called_kit(repo, tmp_path, capsys):
 
 def test_undo_is_refused_after_the_window(repo, tmp_path, capsys):
     clock = Clock()
-    assert deploy(tmp_path, repo, "pending", "drn-03", clock=clock) == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3", clock=clock) == 0
     clock.advance(minutes=11)
     capsys.readouterr()
     assert main(["undo", "--ledger-dir", str(tmp_path / "ledger"),
                  "--db", str(tmp_path / "l.db")], now=clock) == 1
     out = capsys.readouterr().out
     assert "11 minutes old" in out and "offered for 10" in out
-    assert location_of(fold(read_events(tmp_path / "ledger")), "pending") == "drn-03"
+    assert location_of(fold(read_events(tmp_path / "ledger")), "pending") == "drone-3"
 
 
 def test_undo_only_touches_your_own_events(tmp_path):

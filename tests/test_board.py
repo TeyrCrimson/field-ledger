@@ -41,36 +41,36 @@ def test_without_a_ledger_it_is_the_old_table(tmp_path, capsys):
 
 
 def test_a_deployed_labelled_build_gets_its_three_columns(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     assert label(tmp_path, "pending", "HIGH") == 0
     capsys.readouterr()
     board(tmp_path, repo, "--no-fetch")
     out = capsys.readouterr().out
     assert LEDGER_HEADER in out
-    assert row(out, "pending").endswith(f"| drn-03 | {sha_of(repo, 'origin/pending')} | HIGH |")
+    assert row(out, "pending").endswith(f"| drone-3 | {sha_of(repo, 'origin/pending')} | HIGH |")
     assert row(out, "merged").endswith("|  |  |  |")             # not in the ledger: blank
 
 
 def test_moved_on_since_deploy_shows_in_build(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     deployed = sha_of(repo, "origin/pending")
     git(repo, "checkout", "pending")
     commit(repo, "later work")
     git(repo, "push", "origin", "pending")
     capsys.readouterr()
     board(tmp_path, repo, "--no-fetch")
-    assert f"| drn-03 | {deployed} (moved on) |  |" in row(capsys.readouterr().out, "pending")
+    assert f"| drone-3 | {deployed} (moved on) |  |" in row(capsys.readouterr().out, "pending")
 
 
 def test_a_conflict_shows_in_location(repo, tmp_path, capsys):
     clock = Clock()
-    assert deploy(tmp_path, repo, "pending", "drn-03", clock=clock) == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3", clock=clock) == 0
     clock.advance(minutes=2)
     ctx = open_ledger(tmp_path / "ledger", tmp_path / "l.db", None, clock)
     service.submit_deploy(replace(ctx, actor="yoeng", device="yoeng-laptop"), "pending", "site-b")
     capsys.readouterr()
     board(tmp_path, repo, "--no-fetch")
-    assert "| site-b ⚠ drn-03 |" in row(capsys.readouterr().out, "pending")
+    assert "| site-b ⚠ drone-3 |" in row(capsys.readouterr().out, "pending")
 
 
 def test_a_deployed_build_whose_branch_is_gone_gets_a_row(repo, tmp_path, capsys):
@@ -89,7 +89,7 @@ def test_a_deployed_build_whose_branch_is_gone_gets_a_row(repo, tmp_path, capsys
 
 
 def test_the_board_writes_nothing(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     ledger = tmp_path / "ledger"
 
     def snapshot():

@@ -21,7 +21,8 @@ from .kit import PlannedAdd
 from .model import Event, Kind, Move, Rename, Verdict, Void
 from .parse import ParseError, parse
 from .state import State, conflicts, fold, location_of
-from .validate import (canonical_destination, node_id, validate_deploy, validate_label,
+from .validate import (canonical_destination, check_id_destination, node_id, validate_deploy,
+                       validate_label,
                        validate_move, validate_rename, validate_resolve, validate_void)
 
 UNDO_WINDOW = timedelta(minutes=10)      # `undo_minutes`, until settings are a thing
@@ -118,6 +119,9 @@ def submit_deploy(ctx: Context, branch: str, dst: str, sha: str = "",
     somewhere too, so its first deploy has a real 'from' like any other move.
     """
     ctx, state = one_command(ctx), current_state(ctx)
+    bad = check_id_destination(dst, state)
+    if bad:
+        return Outcome(bad)
     target = node_id(dst, state) or canonical_location(dst)
     verdict = validate_deploy(branch, target, state)
     if not should_write(verdict, confirmed):

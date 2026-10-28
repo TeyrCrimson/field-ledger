@@ -117,7 +117,7 @@ Every move prints a **readback** with the item's previous location:
 If the "was in" doesn't match what's in your hand, you have the wrong ID: tap Undo.
 
 Status: **v0** `field-ledger deploy` prints the readback with the previous location
-(`✓ feat/x · build · was in site-b → drn-03, deployed as 4b7e0d1`) and `fl undo` /
+(`✓ feat/x · build · was in site-b → drone-3, deployed as 4b7e0d1`) and `fl undo` /
 `field-ledger undo` cancel it. `fl move` still prints the logged event
 (`logged: 5918e80f  BAT-02  van > site-b`); its readback is **planned**. The "from" side
 is where the log last had the item, whether or not you typed one; a typed one is only
@@ -268,18 +268,21 @@ and timestamped at import time.
 A build is a node of kind `build`. Its parent is where it is deployed:
 
 ```bash
-field-ledger deploy feat/secure-cdr drn-03 --repo /path/to/repo
-# ✓ feat/secure-cdr · build · was in site-b → drn-03, deployed as 4b7e0d1
+field-ledger deploy feat/secure-cdr drone-3 --repo /path/to/repo
+# ✓ feat/secure-cdr · build · was in site-b → drone-3, deployed as 4b7e0d1
 ```
 
 The destination may be a location (created as a fixed location node the first time it is
-named) or an item ID, which deploys the build onto that thing. The deploy records the
+named) or an item ID, which deploys the build onto that thing. An item ID must already be in
+the kit: `deploy feat/x DRN-03` with no DRN-03 is refused (`DRN-03 is not in the kit`), not
+turned into a new place. The same goes for `fl move`. A place an older ledger already knows
+by such a name keeps working. The deploy records the
 branch's head commit in the event's `sha` field (full SHA; empty if unknown), read from
 `--repo` without fetching; with no such branch there the move is still recorded and the
 readback says `commit unknown`. `field-ledger undo` takes it back within 10 minutes.
 
 Code comes from somewhere too: a build's first deploy starts at `build_home` (default `hq`,
-change it with `fl set build_home <location>`), so it reads `was in hq → drn-03`, and
+change it with `fl set build_home <location>`), so it reads `was in hq → drone-3`, and
 undoing that first deploy takes all of it back: the build node and any location it created.
 
 Branch age, last commit and merge state come from **local Git** and work offline and airgapped.
@@ -290,7 +293,7 @@ field-ledger show feat/secure-cdr --repo /path/to/repo   # no fetch
 #   age: 2 day(s) since the last commit
 #   last commit: 9c1d4ae  2026-10-26 18:40  teyr  harden the CDR path
 #   merged into origin/main: no
-#   at drn-03, deployed as 4b7e0d1
+#   at drone-3, deployed as 4b7e0d1
 #   moved on since deploy: deployed as 4b7e0d1, head is now 9c1d4ae
 #   security label: HIGH
 ```
@@ -306,7 +309,7 @@ is not the same as `NA` (checked, not applicable). **v0**:
 
 ```bash
 field-ledger label feat/secure-cdr HIGH opens the CDR port to the site LAN
-# SEC feat/secure-cdr · drn-03 · was LOW → HIGH
+# SEC feat/secure-cdr · drone-3 · was LOW → HIGH
 ```
 
 ### Sample: one build, end to end (v0)

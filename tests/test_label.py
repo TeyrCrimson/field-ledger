@@ -24,13 +24,13 @@ def labels(tmp_path):
 
 @pytest.mark.parametrize("typed", ["CRIT", "high", "Med", "low", "na"])
 def test_each_label_is_accepted_and_stored_uppercase(repo, tmp_path, typed):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     assert label(tmp_path, "pending", typed) == 0
     assert labels(tmp_path) == {"pending": typed.upper()}
 
 
 def test_an_unknown_label_is_rejected_and_nothing_written(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     before = len(read_events(tmp_path / "ledger"))
     assert label(tmp_path, "pending", "spicy") == 1
     assert "'SPICY' is not a security label. Use one of CRIT / HIGH / MED / LOW / NA." \
@@ -48,20 +48,20 @@ def test_only_builds_carry_a_label(repo, tmp_path, capsys):
 
 
 def test_readback_and_reason(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     capsys.readouterr()
     assert label(tmp_path, "pending", "LOW") == 0
-    assert capsys.readouterr().out.startswith("SEC pending · drn-03 · was — → LOW")
+    assert capsys.readouterr().out.startswith("SEC pending · drone-3 · was — → LOW")
     assert label(tmp_path, "pending", "CRIT", "exposes", "the", "CDR", "port") == 0
     out = capsys.readouterr().out
-    assert out.startswith("SEC pending · drn-03 · was LOW → CRIT")
+    assert out.startswith("SEC pending · drone-3 · was LOW → CRIT")
     assert "pending  security CRIT: exposes the CDR port" in out
     sec = [e for e in read_events(tmp_path / "ledger") if e.kind == "SEC" and e.dst == "CRIT"]
     assert sec[0].note == "exposes the CDR port"
 
 
 def test_latest_wins_and_undo_brings_the_previous_back(repo, tmp_path):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     assert label(tmp_path, "pending", "LOW") == 0
     assert label(tmp_path, "pending", "CRIT") == 0
     assert labels(tmp_path) == {"pending": "CRIT"}
@@ -71,7 +71,7 @@ def test_latest_wins_and_undo_brings_the_previous_back(repo, tmp_path):
 
 
 def test_show_tells_never_labelled_from_na(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     capsys.readouterr()
     assert show(tmp_path, repo, "pending") == 0
     assert "security label: none set" in capsys.readouterr().out
@@ -84,7 +84,7 @@ def test_show_tells_never_labelled_from_na(repo, tmp_path, capsys):
 # --- drift: warn only ------------------------------------------------------------
 
 def test_show_warns_when_the_branch_moved_on_since_deploy(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "drone-3") == 0
     deployed = capsys.readouterr().out.split("deployed as ")[1].split()[0]
     assert show(tmp_path, repo, "pending") == 0
     assert "moved on since deploy" not in capsys.readouterr().out      # nothing new yet
@@ -99,9 +99,9 @@ def test_show_warns_when_the_branch_moved_on_since_deploy(repo, tmp_path, capsys
 
 
 def test_no_drift_warning_when_the_commit_is_unknown(repo, tmp_path, capsys):
-    assert deploy(tmp_path, repo, "feat/later", "drn-03") == 0       # not in the clone yet
+    assert deploy(tmp_path, repo, "feat/later", "drone-3") == 0       # not in the clone yet
     assert "commit unknown" in capsys.readouterr().out
     git(repo, "branch", "feat/later")                                # now it is
     assert show(tmp_path, repo, "feat/later") == 0
     out = capsys.readouterr().out
-    assert "at drn-03, commit unknown" in out and "moved on" not in out
+    assert "at drone-3, commit unknown" in out and "moved on" not in out

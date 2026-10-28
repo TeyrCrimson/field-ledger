@@ -256,9 +256,9 @@ field-ledger deploy feat/secure-cdr drn-03 --repo /path/to/repo
 
 The destination may be a location (created as a fixed location node the first time it is
 named) or an item ID, which deploys the build onto that thing. The deploy records the
-branch's head commit, read from `--repo` without fetching; with no such branch there the
-move is still recorded and the readback says `commit unknown`. `field-ledger undo` takes it
-back within 10 minutes.
+branch's head commit in the event's `sha` field (full SHA; empty if unknown), read from
+`--repo` without fetching; with no such branch there the move is still recorded and the
+readback says `commit unknown`. `field-ledger undo` takes it back within 10 minutes.
 
 Branch age, last commit and merge state come from **local Git** and work offline and airgapped.
 

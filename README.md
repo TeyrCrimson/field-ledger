@@ -272,6 +272,12 @@ first, when the hub is back: on reconnecting, on each 10-second refresh, and aft
 The hub logs an event id once, so a resend is harmless ("already logged"). Undo and "I'm new"
 need the hub.
 
+Every write shows at once that it was taken: its card says **Sending…** (then **Waiting for the
+hub**, if it has to wait) and a toast says the same. A hub that hasn't answered in 3 seconds
+counts as away, and until the next refresh reaches it, writes wait at once instead of trying.
+Tapping the same write again while it's on its way or waiting adds nothing ("Already on its
+way").
+
 A waiting write that the hub would refuse or ask about when it arrives is neither logged nor
 dropped. It goes on **Needs a look** at the top of the board, for anyone to settle:
 

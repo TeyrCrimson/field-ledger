@@ -6,9 +6,13 @@
 // If the hub can't be reached, a move, add, label or resolve waits in this browser's queue
 // and goes out, in order, when the hub is back; the id lets the hub log it once however often
 // it's sent. Undo and joining need the hub.
+//
+// Feedback is instant: once a request has failed, the next write waits at once instead of
+// trying again (the next refresh finds the hub), and tapping the same write again while it's
+// still on its way or waiting adds nothing.
 const KEY = "field-ledger";
 const QUEUE = "field-ledger-queue";
-const TIMEOUT_MS = 8_000;
+const TIMEOUT_MS = 3_000;              // a hub that's there answers well inside this
 export const CAN_WAIT = new Set(["move", "add", "label", "resolve"]);
 
 function load(key, empty) {
@@ -41,6 +45,8 @@ if (!me.device || me.seq === undefined) {
 }
 
 const queue = load(QUEUE, []);
+const sending = new Set();
+let away = false;                      // the last request couldn't reach the hub
 
 export function setName(name) {
   me.name = name;
@@ -48,6 +54,7 @@ export function setName(name) {
 }
 
 export const unsynced = () => queue.length;
+export const waiting = () => [...queue];
 
 // Stamped when it's tapped, not when it reaches the hub. A resend (after a CONFIRM, or from
 // the queue) keeps its stamp.
@@ -73,24 +80,62 @@ export async function post(command, body = {}) {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch {
+    away = true;
     throw new Offline("Can't reach the hub.");
   }
+  away = false;
   const answer = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(answer.error || `HTTP ${response.status}`);
   return answer;
 }
 
-// A write from the board. Answers like post(), or { queued: true, body } when it waits.
+// The board, read from the hub. A failure here also marks the hub away.
+export async function getState() {
+  let response;
+  try {
+    response = await fetch("state.json", { cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch {
+    away = true;
+    throw new Offline("Can't reach the hub.");
+  }
+  away = false;
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+// A write without its stamp, so two taps of the same move compare equal.
+function sameWrite(command, body) {
+  const { id, occurred_at, seq, actor, device, confirmed, queued, ...write } = body;
+  return command + JSON.stringify(write);
+}
+
+function wait(command, body) {
+  queue.push({ command, body });
+  keep(QUEUE, queue);
+  return { queued: true, body };
+}
+
+// A write from the board. Answers like post(), or { queued: true, body } when it waits, or
+// { repeat: true } when the same write is already on its way or waiting.
 export async function send(command, body = {}) {
   if (command === "people" || command === "settle") return post(command, body);
+  if (!CAN_WAIT.has(command)) {
+    const stamped = stamp(body);
+    return { ...(await post(command, stamped)), body: stamped };
+  }
+  const key = sameWrite(command, body);
+  const last = queue.at(-1);
+  if (sending.has(key) || (last && sameWrite(last.command, last.body) === key)) return { repeat: true };
   const stamped = stamp(body);
+  if (away) return wait(command, stamped);
+  sending.add(key);
   try {
     return { ...(await post(command, stamped)), body: stamped };
   } catch (error) {
-    if (!(error instanceof Offline) || !CAN_WAIT.has(command)) throw error;
-    queue.push({ command, body: stamped });
-    keep(QUEUE, queue);
-    return { queued: true, body: stamped };
+    if (!(error instanceof Offline)) throw error;
+    return wait(command, stamped);
+  } finally {
+    sending.delete(key);
   }
 }
 

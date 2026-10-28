@@ -131,7 +131,7 @@ DEFAULT_LEDGER_DIR = Path("ledger")
 EVENTS_DIR = "events"
 SETTINGS_FILE = "settings.json"
 # ponytail: one key so far; id_digits, undo_minutes etc. move here when they become settable
-DEFAULT_SETTINGS = {"build_home": "dev"}
+DEFAULT_SETTINGS = {"build_home": "hq"}
 
 
 def events_dir(ledger_dir: Path) -> Path:

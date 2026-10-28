@@ -106,7 +106,7 @@ def submit_deploy(ctx: Context, branch: str, dst: str, sha: str = "",
     already a node (a location node, or an item like DRN-03) is used as it stands; a
     plain-string location from an older ledger stays a plain string.
 
-    A new build starts at `build_home` (a setting, default 'dev'): code comes from
+    A new build starts at `build_home` (a setting, default 'hq'): code comes from
     somewhere too, so its first deploy has a real 'from' like any other move.
     """
     state = current_state(ctx)

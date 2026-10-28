@@ -4,7 +4,7 @@ from datetime import datetime
 
 from .model import Branch, Label, PullRequest, Row
 
-ORDER = [Label.NO_PR, Label.PR_STALE, Label.MERGED_NOT_DELETED, Label.IN_FLIGHT]
+ORDER = [Label.BRANCH_GONE, Label.NO_PR, Label.PR_STALE, Label.MERGED_NOT_DELETED, Label.IN_FLIGHT]
 
 
 def days_between(earlier: datetime, later: datetime) -> int:
@@ -38,4 +38,4 @@ def build_row(branch: Branch, pr: PullRequest | None, merged: bool,
 
 def sort_rows(rows: list[Row]) -> list[Row]:
     """Worst first: by label severity, then oldest first."""
-    return sorted(rows, key=lambda r: (ORDER.index(r.label), -r.age_days))
+    return sorted(rows, key=lambda r: (ORDER.index(r.label), -(r.age_days or 0)))

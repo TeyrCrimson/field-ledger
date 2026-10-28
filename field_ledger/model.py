@@ -12,6 +12,7 @@ class Label(str, Enum):
     NO_PR = "no-PR"                            # checked out, nobody knows
     PR_STALE = "PR-stale"                      # checked out, known, not moving
     IN_FLIGHT = "in-flight"                    # checked out, known, moving
+    BRANCH_GONE = "branch-gone"                # deployed per the ledger, but its branch is gone
 
 
 @dataclass(frozen=True)
@@ -42,4 +43,7 @@ class Row:
     branch: Branch
     pr: PullRequest | None
     label: Label
-    age_days: int           # days since last commit on the branch
+    age_days: int | None    # days since last commit on the branch; None when it is gone
+    location: str = ""      # the ledger columns: blank when there is no ledger
+    build: str = ""
+    sec: str = ""

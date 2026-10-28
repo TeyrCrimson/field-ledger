@@ -365,10 +365,28 @@ Every remote branch is a tool checked out; a branch merged and deleted is a tool
 | `PR-stale` | PR open, untouched for more than `--stale-days` | Ping the reviewer, or close it |
 | `merged-not-deleted` | Every commit already in `--base` | Delete the remote branch |
 | `in-flight` | PR open and moving | Nothing |
+| `branch-gone` | The ledger has it deployed, but its branch no longer exists | Confirm with `fl where`, update with `fl move <build> <location>` |
 
 ```bash
 python -m field_ledger --repo /path/to/repo --base origin/develop
 python -m field_ledger --repo /path/to/repo --base origin/develop --prs gh --hide-in-flight
+```
+
+**This is the 10-30 board.** When a ledger is there (`--ledger-dir`, default `./ledger`) it
+adds three columns, read straight from the event files, offline and without writing anything:
+**Location** (with `⚠ <other place>` when two devices disagree), **Build** (the deployed commit,
+`unknown`, and `(moved on)` when the branch has new commits since) and **SEC** (the label, blank
+if nobody has set one). A deployed build whose branch was merged and deleted gets a
+`branch-gone` row of its own. Without a ledger the table is exactly as above.
+
+```
+branch-gone: 1 (confirm with fl where, update with fl move <build> <location>) · no-PR: 2
+
+| Label | Branch | Age (d) | Author | PR | Location | Build | SEC |
+|---|---|---|---|---|---|---|---|
+| branch-gone | `feat/old-site` | - | - | - | site-a | da94d1f | LOW |
+| no-PR | `feat/build-6` | 0 | TeyrCrimson | - | site-b | 231ce51 |  |
+| no-PR | `feat/build-7` | 0 | TeyrCrimson | - | drone-3 | 3c533aa | HIGH |
 ```
 
 It runs `git fetch --prune` first (`--no-fetch` skips it and works offline). Use a full clone:

@@ -4,6 +4,7 @@ Usage:
     python -m field_ledger init
     python -m field_ledger show feat/x --repo ~/github-repos/casio-edge
     python -m field_ledger deploy feat/x site-b --repo ~/github-repos/casio-edge
+    python -m field_ledger label feat/x CRIT exposes the CDR port
     python -m field_ledger undo
     python -m field_ledger --repo ~/github-repos/casio-edge --base origin/develop --prs gh
 
@@ -86,20 +87,27 @@ def merged_line(repo: Path, branch: str, base: str, remote: str) -> str:
         return f"merged into {base}: unknown (nothing to compare)"
 
 
-def deployed_line(ledger_dir: Path, branch: str) -> str:
-    """Where the ledger says the branch is, and the commit that was deployed there.
+def ledger_lines(ledger_dir: Path, branch: str, head: str) -> list[str]:
+    """What the ledger says about the branch: where it is, the commit deployed there,
+    whether the branch has moved on since (warn only: nothing is written), its label.
 
     Reads the event files, not the cache: `show` is read-only and needs no device,
     no name and no ledger at all.
     """
     if not store.events_dir(ledger_dir).exists():
-        return ""
+        return []
     state = fold(store.read_events(ledger_dir))
-    if branch not in state.where:
-        return ""
-    sha = state.last_event[branch].sha
-    return (f"at {location_of(state, branch)}, "
-            + (f"deployed as {sha[:7]}" if sha else "commit unknown"))
+    if branch not in state.items:
+        return []
+    lines = []
+    if branch in state.where:
+        sha = state.last_event[branch].sha
+        lines.append(f"at {location_of(state, branch)}, "
+                     + (f"deployed as {sha[:7]}" if sha else "commit unknown"))
+        if sha and head != sha:
+            lines.append(f"moved on since deploy: deployed as {sha[:7]}, head is now {head[:7]}")
+    lines.append(f"security label: {state.labels.get(branch, 'none set')}")
+    return lines
 
 
 def do_show(argv: list[str], now: datetime) -> int:
@@ -119,7 +127,7 @@ def do_show(argv: list[str], now: datetime) -> int:
         return 1
     print(render_show(args.branch, commit, now,
                       merged_line(args.repo, args.branch, args.base, args.remote),
-                      deployed_line(args.ledger_dir, args.branch)))
+                      ledger_lines(args.ledger_dir, args.branch, commit.sha)))
     return 0
 
 
@@ -162,6 +170,27 @@ def do_deploy(argv: list[str], now: Callable[[], datetime], ask: Ask) -> int:
     return 0
 
 
+def do_label(argv: list[str], now: Callable[[], datetime]) -> int:
+    """`field-ledger label <branch> <label> [reason]`: a build's security label, by hand."""
+    p = argparse.ArgumentParser(prog="field-ledger label",
+                                description="Set a build's security label: CRIT, HIGH, MED, LOW or NA.")
+    p.add_argument("branch")
+    p.add_argument("label")
+    p.add_argument("reason", nargs="*", help="optional: why, kept on the event")
+    ledger_args(p)
+    args = p.parse_args(argv)
+    ctx = open_ledger(args.ledger_dir, args.db, args.actor, now)
+    before = service.current_state(ctx)
+    outcome = service.submit_label(ctx, args.branch, args.label, " ".join(args.reason))
+    if outcome.event is None:
+        return report(outcome)
+    e = outcome.event
+    print(f"SEC {e.item} · {location_of(before, e.item) or '—'} · "
+          f"was {before.labels.get(e.item, '—')} → {e.dst}")
+    print(f"  logged: {render_event(e)}")
+    return 0
+
+
 def do_undo(argv: list[str], now: Callable[[], datetime]) -> int:
     """`field-ledger undo`: take back your own last command, inside the undo window."""
     p = argparse.ArgumentParser(prog="field-ledger undo",
@@ -182,6 +211,8 @@ def main(argv: list[str] | None = None, ask: Ask = ask_tty,
         return do_show(argv[1:], now())
     if argv and argv[0] == "deploy":
         return do_deploy(argv[1:], now, ask)
+    if argv and argv[0] == "label":
+        return do_label(argv[1:], now)
     if argv and argv[0] == "undo":
         return do_undo(argv[1:], now)
     args = parse_args(argv)

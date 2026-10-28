@@ -21,8 +21,8 @@ from .kit import PlannedAdd
 from .model import Event, Kind, Move, Rename, Verdict, Void
 from .parse import ParseError, parse
 from .state import State, fold, location_of
-from .validate import (canonical_destination, node_id, validate_deploy, validate_move,
-                       validate_rename, validate_void)
+from .validate import (canonical_destination, node_id, validate_deploy, validate_label,
+                       validate_move, validate_rename, validate_void)
 
 UNDO_WINDOW = timedelta(minutes=10)      # `undo_minutes`, until settings are a thing
 
@@ -134,6 +134,15 @@ def submit_deploy(ctx: Context, branch: str, dst: str, sha: str = "",
                       flags=verdict.flags + confirmed_flag)
     store.add(ctx.conn, ctx.ledger_dir, new + [move])
     return Outcome(verdict, move)
+
+
+def submit_label(ctx: Context, branch: str, label: str, reason: str = "") -> Outcome:
+    """SEC: a build's security label, set by hand (no scanner). Latest wins, and a VOID
+    of it brings the previous label back, because replay skips voided events."""
+    item, label, verdict = validate_label(branch, label, current_state(ctx))
+    if item is None:
+        return Outcome(verdict)
+    return write(ctx, verdict, "SEC", None, (), item=item, dst=label, note=reason)
 
 
 def used_since(state: State, node: str, command: list[Event]) -> bool:

@@ -127,7 +127,7 @@ def readback(e: Event, before: str) -> str:
     """Echo the deploy back, so a wrong branch name is obvious while it is still cheap
     to fix: README, 'Logging a move'."""
     sha = f"deployed as {e.sha[:7]}" if e.sha else "commit unknown"
-    return f"✓ {e.item} · branch · {f'was in {before}' if before else 'new'} → {e.dst}, {sha}"
+    return f"✓ {e.item} · build · {f'was in {before}' if before else 'new'} → {e.dst}, {sha}"
 
 
 def do_deploy(argv: list[str], now: Callable[[], datetime], ask: Ask) -> int:

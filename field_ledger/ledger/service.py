@@ -98,9 +98,10 @@ def submit_move(ctx: Context, cmd: Move, confirmed: bool = False,
 
 def submit_deploy(ctx: Context, branch: str, dst: str, sha: str = "",
                   confirmed: bool = False) -> Outcome:
-    """Code mode: a branch is a node, and its parent is where it is deployed.
+    """Code mode: a build is a node of kind `build`, named after its branch, and its
+    parent is where it is deployed.
 
-    The branch node and the destination node are created on first use, in the same
+    The build node and the destination node are created on first use, in the same
     commit as the move, so a deploy is one thing in the log. A destination that is
     already a node (a location node, or an item like DRN-03) is used as it stands; a
     plain-string location from an older ledger stays a plain string.
@@ -115,9 +116,11 @@ def submit_deploy(ctx: Context, branch: str, dst: str, sha: str = "",
         new.append(make_event(ctx, "ADD", ahead=len(new), item=target, note="location",
                               flags=("fixed",)))
     if branch not in state.items:
-        new.append(make_event(ctx, "ADD", ahead=len(new), item=branch, note="branch"))
+        new.append(make_event(ctx, "ADD", ahead=len(new), item=branch, note="build"))
     confirmed_flag = ("confirmed",) if verdict.kind == Kind.CONFIRM else ()
-    move = make_event(ctx, "MOVE", ahead=len(new), item=branch, dst=target, sha=sha,
+    # src: its parent before the move, so the log can say where it came from
+    move = make_event(ctx, "MOVE", ahead=len(new), item=branch,
+                      src=state.where.get(branch, ""), dst=target, sha=sha,
                       flags=verdict.flags + confirmed_flag)
     store.add(ctx.conn, ctx.ledger_dir, new + [move])
     return Outcome(verdict, move)

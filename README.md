@@ -185,7 +185,7 @@ Status: **v0** records the logging person and the import time only. The rest is 
 
 ---
 
-## When two moves disagree (planned)
+## When two moves disagree
 
 Normally the latest move wins. A move gets a **⚠** instead when all of these hold:
 
@@ -198,7 +198,21 @@ Two exact-timed moves from the same phone never conflict: the phone's sequence n
 Same destination from two devices is a duplicate and is merged.
 
 A ⚠ item shows the latest location plus the other candidate. One tap confirms either and writes a
-`RESOLVE` event. Anyone can resolve. A ⚠ older than `nudge_after` gets a bot nudge to the
+`RESOLVE` event. Anyone can resolve. A later move of the item settles it too: latest wins again.
+
+**v0**: computed on every replay, never stored. `fl where` shows it and `fl resolve` settles it
+(picking the other place moves the item there; `undo` brings the ⚠ back):
+
+```bash
+fl where BAT-01
+# BAT-01: site-b  ⚠ or van
+#   Two devices disagree. Settle it: fl resolve BAT-01 <site-b or van>
+fl resolve BAT-01 van
+```
+
+An imported line counts as an approximate time (`time_source: import`, stored on the event),
+so it gets the 60-minute window. In v0 its time is when it was imported. The bot nudge and the
+field-ops owner are **planned**. A ⚠ older than `nudge_after` gets a bot nudge to the
 ledger's **field-ops owner**.
 
 **Every ledger has a field-ops owner**, picked from the People list when the ledger is created.

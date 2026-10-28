@@ -32,6 +32,8 @@ def describe(e: Event) -> str:
         return f"{e.item}  added at {e.dst} ({e.note})" if e.dst else f"{e.item}  added ({e.note})"
     if e.kind == "VOID":
         return f"void {e.ref[:8]}: {e.note}"
+    if e.kind == "RESOLVE":
+        return f"{e.item}  ⚠ resolved: {e.dst}"
     if e.kind == "SEC":
         return f"{e.item}  security {e.dst}" + (f": {e.note}" if e.note else "")
     return f"location '{e.src}' renamed to '{e.dst}'"
@@ -91,7 +93,11 @@ def do_where(ctx: service.Context, cmd: Where) -> int:
         return 0
     *inside, location = ancestors(state, item)
     held = f" (in {' in '.join(inside)})" if inside else ""
-    print(f"{item}: {location}{held}\n  last: {render_event(state.last_event[item])}")
+    other = service.open_conflicts(state).get(item, ("", ""))[1]
+    flag = f"  ⚠ or {other}" if other else ""
+    print(f"{item}: {location}{held}{flag}\n  last: {render_event(state.last_event[item])}")
+    if other:
+        print(f"  Two devices disagree. Settle it: fl resolve {item} <{location} or {other}>")
     return 0
 
 
@@ -169,6 +175,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--yes", action="store_true")
     sub.add_parser("where").add_argument("item")
     sub.add_parser("at").add_argument("location", nargs="+")
+    settle = sub.add_parser("resolve", help="settle a ⚠ by confirming one of its two places")
+    settle.add_argument("item")
+    settle.add_argument("location", nargs="+")
     sub.add_parser("undo", help="take back your own last command, within 10 minutes")
     setting = sub.add_parser("set", help="change a ledger setting, e.g. 'set build_home lab'")
     setting.add_argument("key", choices=sorted(store.DEFAULT_SETTINGS))
@@ -246,6 +255,8 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
         return do_kit(ctx, [group], plan_more)
     if args.command == "import":
         return do_import(ctx, args.file)
+    if args.command == "resolve":
+        return report(service.submit_resolve(ctx, args.item, " ".join(args.location)))
     if args.command == "set":
         value = canonical_location(" ".join(args.value))
         store.write_setting(ctx.ledger_dir, args.key, value)

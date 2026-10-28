@@ -168,6 +168,20 @@ def validate_label(raw: str, label: str, state: State) -> tuple[str | None, str,
     return item, label, Verdict(Kind.ACCEPT)
 
 
+def validate_resolve(raw: str, pick: str, state: State,
+                     open_: dict[str, tuple[str, str]]) -> tuple[str | None, str, Verdict]:
+    """RESOLVE settles a ⚠ by confirming one of its two candidates; anyone may."""
+    item, bad = check_item(raw, state)
+    if bad:
+        return None, "", bad
+    if item not in open_:
+        return None, "", Verdict(Kind.REJECT, (f"{item} has no ⚠ to resolve.",))
+    pick = resolve(canonical_destination(pick, state), state.aliases)
+    if pick not in open_[item]:
+        return None, "", Verdict(Kind.REJECT, (f"Pick one of {open_[item][0]} or {open_[item][1]}.",))
+    return item, pick, Verdict(Kind.ACCEPT)
+
+
 def validate_deploy(branch: str, dst: str, state: State) -> Verdict:
     """A deploy is a move of a branch node, except that the node may not exist yet, so
     `check_item` does not apply. Everything else about a move does."""

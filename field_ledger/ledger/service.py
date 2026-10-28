@@ -20,11 +20,12 @@ from .importer import extract_commands, import_ids, repeats
 from .kit import PlannedAdd
 from .model import Event, Kind, Move, Rename, Verdict, Void
 from .parse import ParseError, parse
-from .state import State, fold, location_of
+from .state import State, conflicts, fold, location_of
 from .validate import (canonical_destination, node_id, validate_deploy, validate_label,
-                       validate_move, validate_rename, validate_void)
+                       validate_move, validate_rename, validate_resolve, validate_void)
 
 UNDO_WINDOW = timedelta(minutes=10)      # `undo_minutes`, until settings are a thing
+CONFLICT_WINDOWS = (timedelta(minutes=5), timedelta(minutes=60))   # `conflict_window`: device, import
 
 
 @dataclass
@@ -35,6 +36,7 @@ class Context:
     now: Callable[[], datetime]
     ledger_dir: Path                # the record; `conn` is its cache, synced on open
     batch: str = ""                 # set while one command writes several events
+    time_source: str = ""           # 'import' while importing a chat export
 
 
 @dataclass(frozen=True)
@@ -66,7 +68,7 @@ def make_event(ctx: Context, kind: str, event_id: str | None = None, ahead: int 
     """`ahead` reserves seqs for events built in one batch before any of them is written."""
     return Event(id=event_id or str(uuid.uuid4()), ts=ctx.now(), device=ctx.device,
                  seq=store.next_seq(ctx.conn, ctx.device) + ahead, actor=ctx.actor, kind=kind,
-                 batch=ctx.batch, **fields)
+                 batch=ctx.batch, time_source=ctx.time_source, **fields)
 
 
 def one_command(ctx: Context) -> Context:
@@ -143,6 +145,22 @@ def submit_label(ctx: Context, branch: str, label: str, reason: str = "") -> Out
     if item is None:
         return Outcome(verdict)
     return write(ctx, verdict, "SEC", None, (), item=item, dst=label, note=reason)
+
+
+def open_conflicts(state: State, windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS
+                   ) -> dict[str, tuple[str, str]]:
+    return conflicts(state, *windows)
+
+
+def submit_resolve(ctx: Context, item: str, pick: str,
+                   windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS) -> Outcome:
+    """RESOLVE: confirm one candidate of a ⚠. Picking the other one moves the node there."""
+    state = current_state(ctx)
+    item, pick, verdict = validate_resolve(item, pick, state, conflicts(state, *windows))
+    if item is None:
+        return Outcome(verdict)
+    return write(ctx, verdict, "RESOLVE", None, (), item=item, src=state.where.get(item, ""),
+                 dst=pick)
 
 
 def used_since(state: State, node: str, command: list[Event]) -> bool:
@@ -244,7 +262,7 @@ def import_line(ctx: Context, line_no: int, text: str, event_id: str, known: set
 
 def import_text(ctx: Context, text: str) -> list[ImportLine]:
     """One import is one command: undo takes the whole file back."""
-    ctx, commands = one_command(ctx), extract_commands(text)
+    ctx, commands = replace(one_command(ctx), time_source="import"), extract_commands(text)
     known = store.existing_ids(ctx.conn)
     repeated = repeats(commands)
     return [import_line(ctx, n, line, eid, known, repeated.get(n))

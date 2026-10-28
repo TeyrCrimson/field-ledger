@@ -3,6 +3,8 @@
 The clock is injected everywhere, so the undo window is tested without sleeping.
 """
 
+import subprocess
+
 import pytest
 
 from field_ledger.cli import main
@@ -44,7 +46,7 @@ def repo(tmp_path):
 
 def test_deploy_readback_shows_the_previous_location(repo, tmp_path, capsys):
     assert deploy(tmp_path, repo, "pending", "drn-03") == 0
-    assert capsys.readouterr().out.startswith("✓ pending · build · new → drn-03, deployed as ")
+    assert capsys.readouterr().out.startswith("✓ pending · build · was in dev → drn-03, deployed as ")
     assert deploy(tmp_path, repo, "pending", "site-b") == 0
     assert "✓ pending · build · was in drn-03 → site-b" in capsys.readouterr().out
 
@@ -55,10 +57,27 @@ def test_deploy_makes_a_build_node_and_logs_where_it_came_from(repo, tmp_path, c
     state = fold(read_events(tmp_path / "ledger"))
     assert state.items["pending"] == "build"
     first, second = [e for e in state.events if e.kind == "MOVE"]
-    assert (first.src, second.src) == ("", "drn-03")
+    assert (first.src, second.src) == ("dev", "drn-03")       # a new build starts at home
     capsys.readouterr()
     assert ledger(tmp_path, "where", "pending") == 0
     assert "pending  drn-03 > site-b" in capsys.readouterr().out
+
+def test_build_home_is_a_ledger_setting(repo, tmp_path, capsys):
+    assert ledger(tmp_path, "set", "build_home", "Lab") == 0
+    assert "build_home: lab" in capsys.readouterr().out
+    last = subprocess.run(["git", "-C", str(tmp_path / "ledger"), "log", "-1", "--format=%s"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+    assert last == "set build_home = lab"                  # shared through the ledger repo
+    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert "· build · was in lab → drn-03" in capsys.readouterr().out
+    assert location_of(fold(read_events(tmp_path / "ledger")), "pending") == "drn-03"
+
+
+def test_a_move_records_where_the_log_last_had_it(repo, tmp_path, capsys):
+    """No --from typed: src is still the last known location, so the log never says '?'."""
+    assert ledger(tmp_path, "add", "BAT", "1", "--at", "van") == 0
+    assert ledger(tmp_path, "move", "BAT-01", "site-b") == 0
+    assert "BAT-01  van > site-b" in capsys.readouterr().out
 
 def test_deploy_records_the_head_commit_at_the_time(repo, tmp_path, capsys):
     assert deploy(tmp_path, repo, "pending", "drn-03") == 0
@@ -75,7 +94,7 @@ def test_deploy_records_the_head_commit_at_the_time(repo, tmp_path, capsys):
 def test_deploy_without_the_code_clone_says_commit_unknown(repo, tmp_path, capsys):
     assert deploy(tmp_path, repo, "feat/elsewhere", "drn-03") == 0
     out = capsys.readouterr().out
-    assert "✓ feat/elsewhere · build · new → drn-03, commit unknown" in out
+    assert "✓ feat/elsewhere · build · was in dev → drn-03, commit unknown" in out
     assert show(tmp_path, repo, "pending") == 0      # and the deploy is really in the ledger
     capsys.readouterr()
     assert ledger(tmp_path, "where", "feat/elsewhere") == 0
@@ -96,7 +115,7 @@ def test_deploy_never_fetches(tmp_path, capsys):
 def test_deploy_target_becomes_a_fixed_location_node(repo, tmp_path):
     assert deploy(tmp_path, repo, "pending", "Site-B") == 0
     state = fold(read_events(tmp_path / "ledger"))
-    assert state.fixed == {"site-b"} and state.items["site-b"] == "location"
+    assert state.fixed == {"dev", "site-b"} and state.items["site-b"] == "location"
     assert location_of(state, "pending") == "site-b"
     assert items_at(state, "site-b") == ["pending"]
 
@@ -107,7 +126,7 @@ def test_deploy_into_an_existing_fixed_location_node(repo, tmp_path, capsys):
     assert deploy(tmp_path, repo, "merged", "site-b") == 0       # the node already exists
     assert "→ site-b" in capsys.readouterr().out
     state = fold(read_events(tmp_path / "ledger"))
-    assert state.fixed == {"site-b"}                             # created once, not twice
+    assert state.fixed == {"dev", "site-b"}                      # created once, not twice
     assert items_at(state, "site-b") == ["merged", "pending"]
 
 
@@ -138,7 +157,7 @@ def test_plain_string_locations_keep_working(tmp_path):
     seed(ctx)
     service.submit_deploy(ctx, "feat/x", "truck")
     state = service.current_state(ctx)
-    assert state.fixed == set() and "truck" not in state.items
+    assert state.fixed == {"dev"} and "truck" not in state.items   # only build_home is new
     assert location_of(state, "feat/x") == "truck"
     assert "feat/x" in items_at(state, "truck")
 
@@ -153,7 +172,7 @@ def test_undo_inside_the_window(repo, tmp_path, capsys):
     assert main(["undo", "--ledger-dir", str(tmp_path / "ledger"),
                  "--db", str(tmp_path / "l.db")], now=clock) == 0
     assert "void" in capsys.readouterr().out
-    assert location_of(fold(read_events(tmp_path / "ledger")), "pending") == ""
+    assert location_of(fold(read_events(tmp_path / "ledger")), "pending") == "dev"   # back home
 
 
 def test_undo_is_refused_after_the_window(repo, tmp_path, capsys):

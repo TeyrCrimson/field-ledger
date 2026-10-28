@@ -129,6 +129,9 @@ def merge(conn: sqlite3.Connection, other: Path) -> int:
 
 DEFAULT_LEDGER_DIR = Path("ledger")
 EVENTS_DIR = "events"
+SETTINGS_FILE = "settings.json"
+# ponytail: one key so far; id_digits, undo_minutes etc. move here when they become settable
+DEFAULT_SETTINGS = {"build_home": "dev"}
 
 
 def events_dir(ledger_dir: Path) -> Path:
@@ -153,6 +156,27 @@ def init_ledger(ledger_dir: Path) -> bool:
     run_git(ledger_dir, "add", "-A")
     run_git(ledger_dir, "commit", "-q", "-m", "init ledger")
     return True
+
+
+def read_settings(ledger_dir: Path) -> dict[str, str]:
+    """Ledger-wide settings. They live in the ledger repo next to the events, so every
+    device that pulls the ledger deploys from the same home. A missing key is its default."""
+    path = ledger_dir / SETTINGS_FILE
+    stored = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return {**DEFAULT_SETTINGS, **stored}
+
+
+def write_setting(ledger_dir: Path, key: str, value: str) -> None:
+    """Set one known key and commit it. Settings are config, not events: changing one
+    changes what the next command does, never what the log already says."""
+    if key not in DEFAULT_SETTINGS:
+        raise KeyError(key)
+    path = ledger_dir / SETTINGS_FILE
+    stored = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    stored[key] = value
+    path.write_text(json.dumps(stored, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    run_git(ledger_dir, "add", "--", SETTINGS_FILE)
+    run_git(ledger_dir, "commit", "-q", "-m", f"set {key} = {value}")
 
 
 def to_json(event: Event) -> str:

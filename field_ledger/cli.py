@@ -247,7 +247,7 @@ def do_label(argv: list[str], now: Callable[[], datetime]) -> int:
 
 
 def do_serve(argv: list[str]) -> int:
-    """`field-ledger serve`: the hub. Read-only for now (field stage 1)."""
+    """`field-ledger serve`: the hub. The board reads from it and writes through it."""
     p = argparse.ArgumentParser(prog="field-ledger serve",
                                 description="Serve the board to this laptop, or with --lan to "
                                             "phones on the field network.")
@@ -256,13 +256,12 @@ def do_serve(argv: list[str]) -> int:
                    help="listen on every interface, not just this laptop (no logins: opt in)")
     p.add_argument("--web-dir", type=Path, default=hub.WEB_DIR,
                    help="serve another front end, e.g. a design to try")
-    p.add_argument("--ledger-dir", type=Path,
-                   default=Path(os.environ.get("FL_LEDGER_DIR", store.DEFAULT_LEDGER_DIR)))
+    ledger_args(p)
     args = p.parse_args(argv)
     if not store.events_dir(args.ledger_dir).exists():
         print(f"REJECT\n  No ledger at {args.ledger_dir}. Run `fl init <your-name>` first.")
         return 1
-    server = hub.make_server(args.ledger_dir, args.web_dir,
+    server = hub.make_server(hub.Hub(args.ledger_dir, args.web_dir, args.db),
                              "0.0.0.0" if args.lan else "127.0.0.1", args.port)
     port = server.server_address[1]
     print(f"Board: http://127.0.0.1:{port}/")
@@ -272,7 +271,9 @@ def do_serve(argv: list[str]) -> int:
         if hub.behind_wsl_nat(address):
             print("  WSL2 is in NAT mode: phones can't reach this address. "
                   "See README, \"The hub\", for the one-time setup.")
-    print("Read-only. Ctrl-C stops it.")
+    if not store.read_people(args.ledger_dir):
+        print("  No People yet: the first person to open the board adds their name.")
+    print("Ctrl-C stops it.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

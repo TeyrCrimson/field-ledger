@@ -228,12 +228,12 @@ hand over, except that anyone may claim ownership once a nudge has gone unanswer
 | Piece | What it is |
 |---|---|
 | **Network** | A travel router (preferred) or a phone hotspot. Laptops join as normal clients. Don't use a laptop hotspot |
-| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation). **v0**: serves the board read-only (see "The hub" below) |
+| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation). **v0**: serves the board and takes its writes (see "The hub" below); offline phones are **planned** |
 | **Phones** | Open the board in a browser and add it to the home screen. Moves queue on the phone if the hub is unreachable and send when it's back |
 | **Relay** | When phones can't reach the hub (company or public Wi-Fi, or no hub on site), moves go through the Telegram bot. The hub fetches them over outbound HTTPS. The bot carries moves; it is never the record |
 | **Backup** | The hub pushes the ledger repo when it has internet |
 
-### The hub (v0: read-only)
+### The hub (v0)
 
 ```bash
 field-ledger serve                             # this laptop: http://127.0.0.1:8765/
@@ -241,12 +241,31 @@ field-ledger serve --lan                       # phones on the field network too
 field-ledger serve --web-dir ~/designs/board   # try a design without touching the repo
 ```
 
-It serves two things: `/state.json`, the replayed state (every node with its place, container
-chain, a build's commit and label, any ⚠ with both places), and the board from
-`field_ledger/web/`. That folder is plain files with no build step: `tokens.css` (colours,
-spacing, type) and one ES module per component in `components/`, each carrying its own markup
-and style, put together by `board.js`. A design pass swaps files there. `/state.json` is the
-contract it must keep. The board refreshes every 10 seconds; nothing can be changed from it yet.
+**Using the board.** On first open a phone asks "Who are you?": pick your name, or add it once
+("I'm new"). That name goes on every move you log. Then:
+
+- **Move:** tap a card, then tap a place (or another card, to pack it inside). On a laptop, drag
+  it. Or type where it went in the bar at the bottom.
+- **Readback:** every write shows `✓ BAT-03 · Blue 6S · was in truck → van` with **Undo**.
+  "Undo my last" in the header works for 10 minutes.
+- **Asked first:** the same rules as `fl`. A new ID-shaped place or a fixed location asks
+  before it logs; a refusal says why.
+- **⚠:** a card two devices disagree on shows both places; pick it and tap where it really is.
+- **Builds:** pick one to set its security label. **+ Add items** creates N more of a kind at a
+  place, without the CLI.
+
+`fl people` lists the names; `fl people add <name>` adds one; `fl init` adds its own.
+
+**What it serves.** `GET /state.json` is the replayed state: every node with its place, container
+chain and last event; a build's commit and label; any ⚠ with both places; the People list.
+`POST /api/move | undo | resolve | label | add` takes JSON naming the person (`actor`, from the
+People list) and the browser (`device`), runs the same service functions as `fl`, and answers
+`{verdict, messages, event, readback}`. A refusal is a verdict, not an error; a malformed request
+is a 400. `POST /api/people {name}` adds a name. Writes run one at a time: the hub is the only
+committer. `GET /` is the board from `field_ledger/web/`: plain files, no build step.
+`tokens.css` holds colours, spacing and type; each file in `components/` carries its own markup
+and style; `board.js` wires them up and `api.js` does the writes. A design pass swaps the files;
+`/state.json` and the API are the contract it must keep.
 
 **Reaching it from phones.** Phones and the hub join the travel router. Then:
 
@@ -498,8 +517,8 @@ Never commit them. Copying the token file is part of takeover.
 | `ledger/service.py` | Validate, then write | no |
 | `ledger/cli.py` | `fl` command; opening a ledger, shared with code mode | no |
 | `cli.py` | `field-ledger` command: board, `show`, `deploy`, `label`, `undo`, `serve` | no |
-| `hub.py` | The hub: `/state.json` and the web front end; read-only for now | no |
-| `web/` | The board: `tokens.css`, `components/*.js`, `board.js`. No build step | (front end) |
+| `hub.py` | The hub: `/state.json`, the web front end, and the board's writes (`/api/*`) | no |
+| `web/` | The board: `tokens.css`, `components/*.js`, `board.js`, `api.js`. No build step | (front end) |
 
 ## Tests
 

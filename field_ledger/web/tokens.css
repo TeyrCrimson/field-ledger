@@ -11,6 +11,9 @@
   --surface: #ffffff;
   --line: #d7dade;
   --accent: #1f5fbf;
+  --on-accent: #ffffff;
+  --ok: #2f6f3e;
+  --error: #b3261e;
   --warn: #7a4f00;
   --warn-bg: #fff3d1;
 
@@ -34,6 +37,9 @@
     --surface: #202329;
     --line: #353a42;
     --accent: #7fb0ff;
+    --on-accent: #0b1a33;
+    --ok: #8fd19e;
+    --error: #ff8a80;
     --warn: #ffd27a;
     --warn-bg: #3a2e12;
     --sec-crit: #ff8a80;
@@ -67,6 +73,7 @@ body {
 }
 
 .bar h1 { margin: 0; font-size: 1.1rem; }
+.bar nav { display: flex; flex-wrap: wrap; gap: calc(var(--space) / 2); }
 .bar p { margin: 0; color: var(--muted); font-size: 0.875rem; }
 
 /* A column per place on a laptop; one stacked column on a phone. */

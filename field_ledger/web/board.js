@@ -1,35 +1,191 @@
-// Puts the board together: fetch /state.json, a column per place, a card per node.
-// Each component in components/ carries its own markup and style, so a design pass swaps
-// files there (and tokens.css) and never touches the hub. Read-only for now (F1).
+// Puts the board together and wires it up. Components (components/*.js) only build elements
+// and take callbacks, each with its own markup and style, so a design pass swaps those files
+// (and tokens.css) without touching this one or the hub.
+//
+// Moving: tap a card to pick it, then tap a place or another card (to pack it inside);
+// on a laptop, drag it there. Every write goes through api.js to the hub, which answers with
+// the same rules as `fl`: refused, asked (a confirm), or logged (a readback with Undo).
+import { me, post, setName } from "./api.js";
+import { actionBar, css as actionCss } from "./components/actionbar.js";
+import { addDialog, css as addCss } from "./components/add-form.js";
 import { column, css as columnCss } from "./components/column.js";
+import { confirmDialog, css as confirmCss } from "./components/confirm.js";
+import { button, dialogCss } from "./components/dom.js";
 import { itemCard, css as cardCss } from "./components/item-card.js";
+import { peoplePicker, css as peopleCss } from "./components/people.js";
+import { toast, css as toastCss } from "./components/toast.js";
 
 const REFRESH_MS = 10_000;
+const TOAST_MS = 15_000;
 
 const style = document.createElement("style");
-style.textContent = columnCss + cardCss;
+style.textContent = [dialogCss, columnCss, cardCss, actionCss, addCss, confirmCss, peopleCss,
+                     toastCss].join("\n");
 document.head.append(style);
 
-function render(state) {
-  const byPlace = new Map(state.places.map((place) => [place, []]));
-  for (const node of state.nodes) {
+let latest = { places: [], nodes: [], people: [] };
+let selected = null;                                    // the picked node's id
+
+const $ = (id) => document.getElementById(id);
+const nodeById = (id) => latest.nodes.find((node) => node.id === id);
+
+function showDialog(dialog) {
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+function say(text, options = {}) {
+  const node = toast(text, options);
+  $("toasts").append(node);
+  setTimeout(() => node.remove(), TOAST_MS);
+}
+
+// One write, end to end: refused → why; asked → confirm, then again with confirmed;
+// logged → the readback, with Undo.
+async function act(command, body = {}) {
+  let answer;
+  try {
+    answer = await post(command, body);
+  } catch (error) {
+    return say(`Not logged: ${error.message}`, { error: true });
+  }
+  if (answer.verdict === "CONFIRM") {
+    return showDialog(confirmDialog(answer.messages, () => act(command, { ...body, confirmed: true })));
+  }
+  if (answer.verdict === "REJECT" || answer.verdict === "IGNORE") {
+    say(answer.messages.join(" ") || "Not logged.", { error: true });
+  } else {
+    say(answer.readback, {
+      messages: answer.verdict === "WARN" ? answer.messages : [],
+      onUndo: command === "undo" ? null : () => act("undo"),
+    });
+  }
+  select(null);
+  await refresh();
+}
+
+function moveTo(target) {
+  if (selected && target !== selected) act("move", { item: selected, to: target });
+}
+
+function select(id) {
+  selected = id;
+  const node = id && nodeById(id);
+  $("board").classList.toggle("picking", Boolean(node));
+  for (const card of document.querySelectorAll(".card")) {
+    card.classList.toggle("selected", card.dataset.id === id);
+  }
+  $("actionbar").replaceChildren(...(node ? [actionBar(node, latest.places, {
+    onMove: moveTo,
+    onResolve: (place) => act("resolve", { item: node.id, to: place }),
+    onLabel: (label) => act("label", { build: node.id, label }),
+    onCancel: () => select(null),
+  })] : []));
+  const bar = $("actionbar").firstElementChild;            // toasts sit above the bar, never on it
+  $("toasts").style.bottom = bar ? `${bar.offsetHeight + 8}px` : "";
+}
+
+function cardFor(node) {
+  const card = itemCard(node);
+  card.dataset.id = node.id;
+  card.tabIndex = 0;
+  card.setAttribute("role", "button");
+  card.draggable = true;
+  card.addEventListener("dragstart", (event) => {
+    event.dataTransfer.setData("text/plain", node.id);
+    select(node.id);
+  });
+  return card;
+}
+
+function render() {
+  const byPlace = new Map(latest.places.map((place) => [place, []]));
+  for (const node of latest.nodes) {
     if (node.location) byPlace.get(node.location).push(node);   // a place itself has none
   }
-  const columns = [...byPlace].map(([place, nodes]) => column(place, nodes.map(itemCard)));
-  document.getElementById("board").replaceChildren(...columns);
+  const columns = [...byPlace].map(([place, nodes]) => {
+    const section = column(place, nodes.map(cardFor));
+    section.dataset.place = place;
+    return section;
+  });
+  $("board").replaceChildren(...columns);
+  select(nodeById(selected) ? selected : null);
+}
+
+// One listener for the whole board: a card picks (or receives) the selection; the rest of a
+// column is the place itself.
+function onBoardTap(event) {
+  const card = event.target.closest(".card");
+  if (card) {
+    if (!selected) return select(card.dataset.id);
+    return card.dataset.id === selected ? select(null) : moveTo(card.dataset.id);
+  }
+  const place = event.target.closest(".column");
+  if (place) moveTo(place.dataset.place);
+}
+
+function wireBoard() {
+  const board = $("board");
+  board.addEventListener("click", onBoardTap);
+  board.addEventListener("keydown", (event) => {
+    if ((event.key === "Enter" || event.key === " ") && event.target.closest(".card")) {
+      event.preventDefault();
+      onBoardTap(event);
+    }
+  });
+  board.addEventListener("dragover", (event) => {
+    if (event.target.closest(".column")) event.preventDefault();
+  });
+  board.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const card = event.target.closest(".card");
+    moveTo(card ? card.dataset.id : event.target.closest(".column")?.dataset.place);
+  });
+}
+
+function pickName(required) {
+  const dialog = peoplePicker(latest.people, {
+    required,
+    onPick: (name) => { setName(name); dialog.close(); renderHeader(); },
+    onJoin: async (name) => {
+      try {
+        const answer = await post("people", { name });
+        setName(answer.name);
+        latest.people = answer.people;
+        dialog.close();
+        renderHeader();
+        say(answer.readback);
+      } catch (error) {
+        say(`Couldn't add you: ${error.message}`, { error: true });
+      }
+    },
+  });
+  showDialog(dialog);
+}
+
+function renderHeader() {
+  $("actions").replaceChildren(
+    button(me.name ? `You: ${me.name}` : "Who are you?", "", () => pickName(false)),
+    button("+ Add items", "", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))),
+    button("Undo my last", "", () => act("undo")),
+  );
 }
 
 async function refresh() {
-  const status = document.getElementById("status");
   try {
     const response = await fetch("state.json", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    render(await response.json());
-    status.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    latest = await response.json();
+    render();
+    $("status").textContent = `Updated ${new Date().toLocaleTimeString()}`;
   } catch (error) {
-    status.textContent = `Can't reach the hub (${error.message}). Showing the last board.`;
+    $("status").textContent = `Can't reach the hub (${error.message}). Showing the last board.`;
   }
 }
 
-refresh();
+wireBoard();
+renderHeader();
+await refresh();
+if (!me.name || !latest.people.includes(me.name)) pickName(true);
 setInterval(refresh, REFRESH_MS);

@@ -39,7 +39,8 @@ def ledger(tmp_path):
 
 
 def start(ledger_dir, web_dir=hub.WEB_DIR):
-    server = hub.make_server(ledger_dir, web_dir, "127.0.0.1", 0)
+    server = hub.make_server(hub.Hub(ledger_dir, web_dir, ledger_dir.parent / "hub.db"),
+                             "127.0.0.1", 0)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, f"http://127.0.0.1:{server.server_address[1]}"
 

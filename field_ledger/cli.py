@@ -3,17 +3,26 @@
 Usage:
     python -m field_ledger init
     python -m field_ledger show feat/x --repo ~/github-repos/casio-edge
+    python -m field_ledger deploy feat/x site-b --repo ~/github-repos/casio-edge
+    python -m field_ledger undo
     python -m field_ledger --repo ~/github-repos/casio-edge --base origin/develop --prs gh
+
+`deploy` and `undo` write to the same ledger as `fl`, through the same service layer.
 """
 
 import argparse
+import os
 import sys
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .classify import build_row, sort_rows
 from .git_source import is_merged, last_commit, list_branches, run_git
-from .ledger import store
+from .ledger import service, store
+from .ledger.cli import Ask, ask_tty, open_ledger, render_event, render_verdict, report
+from .ledger.model import Event, Kind
+from .ledger.state import fold, location_of
 from .model import Label
 from .pr_source import fetch_prs
 from .render import render_show, render_table
@@ -60,29 +69,120 @@ def do_init(argv: list[str]) -> None:
     print(f"OK\n  ledger: {args.ledger_dir}  ({'created' if created else 'already there'})")
 
 
+def ledger_args(p: argparse.ArgumentParser) -> None:
+    """The ledger flags, spelled the same way `fl` spells them."""
+    p.add_argument("--ledger-dir", type=Path,
+                   default=Path(os.environ.get("FL_LEDGER_DIR", store.DEFAULT_LEDGER_DIR)))
+    p.add_argument("--db", type=Path, default=Path(os.environ.get("FL_DB", "field-ledger.db")))
+    p.add_argument("--actor", help="who is logging (default: the name given to `init`)")
+
+
+def merged_line(repo: Path, branch: str, base: str, remote: str) -> str:
+    """Whether `base` already contains the branch. Local-only branches have no
+    remote-tracking ref to compare, and `is_merged` says so by raising."""
+    try:
+        return f"merged into {base}: {'yes' if is_merged(repo, branch, base, remote) else 'no'}"
+    except RuntimeError:
+        return f"merged into {base}: unknown (nothing to compare)"
+
+
+def deployed_line(ledger_dir: Path, branch: str) -> str:
+    """Where the ledger says the branch is, and the commit that was deployed there.
+
+    Reads the event files, not the cache: `show` is read-only and needs no device,
+    no name and no ledger at all.
+    """
+    if not store.events_dir(ledger_dir).exists():
+        return ""
+    state = fold(store.read_events(ledger_dir))
+    if branch not in state.where:
+        return ""
+    sha = state.last_event[branch].sha
+    return (f"at {location_of(state, branch)}, "
+            + (f"deployed as {sha[:7]}" if sha else "commit unknown"))
+
+
 def do_show(argv: list[str], now: datetime) -> int:
     """`field-ledger show <branch>`: derived state from local Git only, so it works offline."""
     p = argparse.ArgumentParser(prog="field-ledger show",
-                                description="Branch age and last commit, from local Git.")
+                                description="Branch age, last commit, merge state, deployment.")
     p.add_argument("branch")
     p.add_argument("--repo", type=Path, default=Path("."), help="path to a local clone")
     p.add_argument("--remote", default="origin")
+    p.add_argument("--base", default="origin/main", help="branch that counts as 'delivered'")
+    p.add_argument("--ledger-dir", type=Path,
+                   default=Path(os.environ.get("FL_LEDGER_DIR", store.DEFAULT_LEDGER_DIR)))
     args = p.parse_args(argv)
     commit = last_commit(args.repo, args.branch, args.remote)
     if commit is None:
         print(f"REJECT\n  No branch '{args.branch}' in {args.repo} (local or {args.remote}/).")
         return 1
-    print(render_show(args.branch, commit, now))
+    print(render_show(args.branch, commit, now,
+                      merged_line(args.repo, args.branch, args.base, args.remote),
+                      deployed_line(args.ledger_dir, args.branch)))
     return 0
 
 
-def main(argv: list[str] | None = None) -> int | None:
+def readback(e: Event, before: str) -> str:
+    """Echo the deploy back, so a wrong branch name is obvious while it is still cheap
+    to fix: README, 'Logging a move'."""
+    sha = f"deployed as {e.sha[:7]}" if e.sha else "commit unknown"
+    return f"✓ {e.item} · branch · {f'was in {before}' if before else 'new'} → {e.dst}, {sha}"
+
+
+def do_deploy(argv: list[str], now: Callable[[], datetime], ask: Ask) -> int:
+    """`field-ledger deploy <branch> <location>`: the branch becomes a node whose parent
+    is where it is deployed. The head commit is read from the local clone; it never fetches."""
+    p = argparse.ArgumentParser(prog="field-ledger deploy",
+                                description="Record where a branch is deployed.")
+    p.add_argument("branch")
+    p.add_argument("to", nargs="+", help="a location, or an item ID to deploy onto")
+    p.add_argument("--repo", type=Path, default=Path("."), help="path to a local clone")
+    p.add_argument("--remote", default="origin")
+    p.add_argument("--yes", action="store_true", help="answer yes to any confirmation")
+    ledger_args(p)
+    args = p.parse_args(argv)
+    ctx = open_ledger(args.ledger_dir, args.db, args.actor, now)
+    commit = last_commit(args.repo, args.branch, args.remote)
+    dst, before = " ".join(args.to), service.deployed_at(ctx, args.branch)
+    outcome = service.submit_deploy(ctx, args.branch, dst, commit.sha if commit else "")
+    if outcome.verdict.kind == Kind.CONFIRM:
+        print(render_verdict(outcome.verdict))
+        if not (args.yes or ask("Log it anyway? [y/N] ")):
+            print("Not logged.")
+            return 2
+        outcome = service.submit_deploy(ctx, args.branch, dst, commit.sha if commit else "",
+                                        confirmed=True)
+    if outcome.event is None:
+        return report(outcome)
+    print(readback(outcome.event, before))
+    for message in outcome.verdict.messages:
+        print(f"  {message}")
+    print(f"  logged: {render_event(outcome.event)}")
+    return 0
+
+
+def do_undo(argv: list[str], now: Callable[[], datetime]) -> int:
+    """`field-ledger undo`: VOID your own last event, inside the undo window."""
+    p = argparse.ArgumentParser(prog="field-ledger undo",
+                                description="Cancel your own last event, within 10 minutes.")
+    ledger_args(p)
+    args = p.parse_args(argv)
+    return report(service.submit_undo(open_ledger(args.ledger_dir, args.db, args.actor, now)))
+
+
+def main(argv: list[str] | None = None, ask: Ask = ask_tty,
+         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> int | None:
     argv = sys.argv[1:] if argv is None else argv
     # ponytail: subcommands peeled off the front, so the flags-only board call
-    # keeps working unchanged. Switch to subparsers once there are three of these.
+    # keeps working unchanged. Switch to subparsers once the board moves too.
     if argv and argv[0] == "init":
         return do_init(argv[1:])
     if argv and argv[0] == "show":
-        return do_show(argv[1:], datetime.now(timezone.utc))
+        return do_show(argv[1:], now())
+    if argv and argv[0] == "deploy":
+        return do_deploy(argv[1:], now, ask)
+    if argv and argv[0] == "undo":
+        return do_undo(argv[1:], now)
     args = parse_args(argv)
-    print(render_table(collect(args, datetime.now(timezone.utc))))
+    print(render_table(collect(args, now())))

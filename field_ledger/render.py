@@ -25,8 +25,16 @@ def render_table(rows: list[Row]) -> str:
     return f"{render_summary(rows)}\n\n{HEADER}\n{body}" if rows else render_summary(rows)
 
 
-def render_show(branch: str, commit: Commit, now: datetime) -> str:
-    return (f"{branch}\n"
-            f"  age: {days_between(commit.when, now)} day(s) since the last commit\n"
-            f"  last commit: {commit.sha[:7]}  {commit.when:%Y-%m-%d %H:%M}  {commit.author}  "
-            f"{commit.subject}")
+def render_show(branch: str, commit: Commit, now: datetime, merged: str = "",
+                deployed: str = "") -> str:
+    """Everything known about one branch. `merged` and `deployed` are omitted when the
+    caller could not work them out (no ref to compare, no ledger)."""
+    lines = [branch,
+             f"  age: {days_between(commit.when, now)} day(s) since the last commit",
+             f"  last commit: {commit.sha[:7]}  {commit.when:%Y-%m-%d %H:%M}  {commit.author}  "
+             f"{commit.subject}"]
+    if merged:
+        lines.append(f"  {merged}")
+    if deployed:
+        lines.append(f"  {deployed}")
+    return "\n".join(lines)

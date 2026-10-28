@@ -36,6 +36,7 @@ fl move CAS-01 van                   # ...and everything inside the case goes wi
 fl where BAT-07                      # BAT-07: van (in CAS-01)
 fl at site-b                         # everything there, including inside cases
 fl flags                             # everything that needs a second look
+fl undo                              # cancel your own last event, within 10 minutes
 fl void <event-id> "wrong battery"   # correct a mistake (history is kept)
 ```
 
@@ -75,8 +76,9 @@ where this is tomorrow?* If not, it isn't a parent.
 
 **Bulk items** (cable ties, spare props) are one node with an optional count.
 
-Status: **v0** has flat items and free-text locations. Nesting, kinds, states and fixed
-locations are **planned**.
+Status: **v0** has nesting, and `field-ledger deploy` creates its destination as a fixed
+location node (moving one asks for confirmation). Locations named by `fl move` are still
+free text, and older ledgers full of them keep working. Kinds and states are **planned**.
 
 ---
 
@@ -114,8 +116,10 @@ Every move prints a **readback** with the item's previous location:
 
 If the "was in" doesn't match what's in your hand, you have the wrong ID: tap Undo.
 
-Status: **v0** prints the logged event (`logged: 5918e80f  BAT-02  ? > site-b`). The readback
-with the previous location and Undo is **planned**.
+Status: **v0** `field-ledger deploy` prints the readback with the previous location
+(`✓ feat/x · branch · was in site-b → drn-03, deployed as 4b7e0d1`) and `fl undo` /
+`field-ledger undo` cancel it. `fl move` still prints the logged event
+(`logged: 5918e80f  BAT-02  ? > site-b`); its readback is **planned**.
 
 ### Text grammar (v0)
 
@@ -153,7 +157,7 @@ new *item* to create, not a new location.
 
 | Mistake | Fix | Status |
 |---|---|---|
-| Just logged the wrong move | **Undo** within 10 minutes (`undo_minutes`). Undo is a VOID of your own last event | planned |
+| Just logged the wrong move | **Undo** within 10 minutes (`undo_minutes`). Undo is a VOID of your own last event; after the window it is refused and asks for `void <id> <reason>` | v0 |
 | Older wrong entry | `fl void <id> <reason>`. The event stays, marked void; the item goes back to where it was | v0 |
 | Location typo | `fl rename-location site-bb site-b`. Views show the new name; stored events keep what was typed | v0 |
 
@@ -245,16 +249,30 @@ and timestamped at import time.
 
 A build is a node of kind `build`. Its parent is where it is deployed:
 
+```bash
+field-ledger deploy feat/secure-cdr drn-03 --repo /path/to/repo
+# ✓ feat/secure-cdr · branch · was in site-b → drn-03, deployed as 4b7e0d1
 ```
-deploy feat/secure-cdr > DRONE-3      (planned)
-```
+
+The destination may be a location (created as a fixed location node the first time it is
+named) or an item ID, which deploys the build onto that thing. The deploy records the
+branch's head commit, read from `--repo` without fetching; with no such branch there the
+move is still recorded and the readback says `commit unknown`. `field-ledger undo` takes it
+back within 10 minutes.
 
 Branch age, last commit and merge state come from **local Git** and work offline and airgapped.
 
 ```bash
-field-ledger show feat/secure-cdr --repo /path/to/repo   # age + last commit, no fetch
+field-ledger show feat/secure-cdr --repo /path/to/repo   # no fetch
+# feat/secure-cdr
+#   age: 2 day(s) since the last commit
+#   last commit: 9c1d4ae  2026-10-26 18:40  teyr  harden the CDR path
+#   merged into origin/main: no
+#   at drn-03, deployed as 4b7e0d1
 ```
-PR/MR status from GitHub or GitLab is optional and needs a token.
+
+The deployed commit is recorded, not compared: nothing yet tells you the branch has moved
+on since. PR/MR status from GitHub or GitLab is optional and needs a token.
 
 ### Stale-work board (v0)
 
@@ -327,7 +345,8 @@ Never commit them. Copying the token file is part of takeover.
 | `ledger/importer.py` | Finding commands in text | yes |
 | `ledger/store.py` | Event files (the record), SQLite cache, merge | no |
 | `ledger/service.py` | Validate, then write | no |
-| `ledger/cli.py` | `fl` command | no |
+| `ledger/cli.py` | `fl` command; opening a ledger, shared with code mode | no |
+| `cli.py` | `field-ledger` command: board, `show`, `deploy`, `undo` | no |
 
 ## Tests
 

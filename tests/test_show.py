@@ -17,7 +17,7 @@ def test_show_works_with_the_remote_gone(tmp_path, capsys):
     out = capsys.readouterr().out
     sha = git_out(work, "rev-parse", "--short=7", "origin/pending")
     assert out.startswith("pending\n  age: 0 day(s)")
-    assert f"last commit: {sha}" in out and out.rstrip().endswith("pending")
+    assert f"last commit: {sha}" in out and "  pending\n" in out      # the commit subject
 
 
 def test_show_falls_back_to_a_local_branch(tmp_path, capsys):

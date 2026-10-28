@@ -29,15 +29,21 @@ CREATE TABLE IF NOT EXISTS events (
     dst    TEXT NOT NULL DEFAULT '',
     ref    TEXT NOT NULL DEFAULT '',
     note   TEXT NOT NULL DEFAULT '',
+    sha    TEXT NOT NULL DEFAULT '',
     flags  TEXT NOT NULL DEFAULT ''
 );
 """
-COLUMNS = ("id", "ts", "device", "seq", "actor", "kind", "item", "src", "dst", "ref", "note", "flags")
+COLUMNS = ("id", "ts", "device", "seq", "actor", "kind", "item", "src", "dst", "ref", "note",
+           "sha", "flags")
 
 
 def connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.executescript(SCHEMA)
+    present = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+    for column in COLUMNS:          # a cache written by an older version: add what it lacks
+        if column not in present:
+            conn.execute(f"ALTER TABLE events ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
     return conn
 
 
@@ -66,7 +72,8 @@ def ensure_device(conn: sqlite3.Connection) -> str:
 
 def to_row(event: Event) -> tuple:
     return (event.id, event.ts.isoformat(), event.device, event.seq, event.actor, event.kind,
-            event.item, event.src, event.dst, event.ref, event.note, ",".join(event.flags))
+            event.item, event.src, event.dst, event.ref, event.note, event.sha,
+            ",".join(event.flags))
 
 
 def from_row(row: tuple) -> Event:

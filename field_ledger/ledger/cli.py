@@ -32,6 +32,8 @@ def describe(e: Event) -> str:
         return f"{e.item}  added at {e.dst} ({e.note})" if e.dst else f"{e.item}  added ({e.note})"
     if e.kind == "VOID":
         return f"void {e.ref[:8]}: {e.note}"
+    if e.kind == "SEC":
+        return f"{e.item}  security {e.dst}" + (f": {e.note}" if e.note else "")
     return f"location '{e.src}' renamed to '{e.dst}'"
 
 

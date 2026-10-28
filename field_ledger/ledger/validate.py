@@ -49,6 +49,9 @@ def not_found(raw: str, state: State) -> str:
             f"at its first deploy.{tail}")
 
 
+SEC_LABELS = ("CRIT", "HIGH", "MED", "LOW", "NA")
+
+
 # --- individual checks ---------------------------------------------------------
 
 def check_item(raw: str, state: State) -> tuple[str | None, Verdict | None]:
@@ -147,6 +150,22 @@ def validate_move(cmd: Move, actor: str, state: State, now: datetime) -> tuple[s
         check_same_place(item, dst, state),
         check_fixed(item, state),
     ])
+
+
+def validate_label(raw: str, label: str, state: State) -> tuple[str | None, str, Verdict]:
+    """A security label goes on a build, and is one of a fixed five: a free-text label
+    can't be counted or compared on the board. Returns (build, label, verdict)."""
+    item, bad = check_item(raw, state)
+    if bad:
+        return None, "", bad
+    if state.items[item] != "build":
+        return None, "", Verdict(Kind.REJECT, (f"{item} is not a build; only builds carry a "
+                                               f"security label.",))
+    label = label.strip().upper()
+    if label not in SEC_LABELS:
+        return None, "", Verdict(Kind.REJECT, (f"'{label}' is not a security label. Use one of "
+                                               f"{' / '.join(SEC_LABELS)}.",))
+    return item, label, Verdict(Kind.ACCEPT)
 
 
 def validate_deploy(branch: str, dst: str, state: State) -> Verdict:

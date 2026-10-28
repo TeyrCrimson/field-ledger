@@ -27,6 +27,7 @@ class State:
     locations: set[str] = field(default_factory=set)           # every resolved location seen
     fixed: set[str] = field(default_factory=set)               # location nodes: hold nodes, rarely move
     aliases: dict[str, str] = field(default_factory=dict)      # old location -> new
+    labels: dict[str, str] = field(default_factory=dict)       # build -> security label (SEC)
     voided: set[str] = field(default_factory=set)
     events: list[Event] = field(default_factory=list)          # live (non-voided) events, in order
 
@@ -94,6 +95,8 @@ def apply(state: State, event: Event) -> None:
             state.locations.add(event.dst)
     elif event.kind == "RENAME":
         state.aliases[event.src] = event.dst
+    elif event.kind == "SEC":           # latest wins; a voided one never gets here
+        state.labels[event.item] = event.dst
     state.events.append(event)
 
 

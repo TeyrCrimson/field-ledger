@@ -277,10 +277,23 @@ field-ledger show feat/secure-cdr --repo /path/to/repo   # no fetch
 #   last commit: 9c1d4ae  2026-10-26 18:40  teyr  harden the CDR path
 #   merged into origin/main: no
 #   at drn-03, deployed as 4b7e0d1
+#   moved on since deploy: deployed as 4b7e0d1, head is now 9c1d4ae
+#   security label: HIGH
 ```
 
-The deployed commit is recorded, not compared: nothing yet tells you the branch has moved
-on since. PR/MR status from GitHub or GitLab is optional and needs a token.
+When the branch has moved on since its deploy, `show` says so. It only warns: nothing is
+written, and the label doesn't change. PR/MR status from GitHub or GitLab is optional and
+needs a token.
+
+Each build carries a **security label**, set by hand (no scanner): exactly `CRIT`, `HIGH`,
+`MED`, `LOW` or `NA`, with an optional reason kept on the SEC event. The latest wins; `undo`
+or `void` brings the previous one back. A build nobody has labelled shows `none set`, which
+is not the same as `NA` (checked, not applicable). **v0**:
+
+```bash
+field-ledger label feat/secure-cdr HIGH opens the CDR port to the site LAN
+# SEC feat/secure-cdr · drn-03 · was LOW → HIGH
+```
 
 ### Sample: one build, end to end (v0)
 

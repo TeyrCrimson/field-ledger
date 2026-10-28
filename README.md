@@ -264,9 +264,9 @@ branch's head commit in the event's `sha` field (full SHA; empty if unknown), re
 `--repo` without fetching; with no such branch there the move is still recorded and the
 readback says `commit unknown`. `field-ledger undo` takes it back within 10 minutes.
 
-Code comes from somewhere too: a build's first deploy starts at `build_home` (default `dev`,
-change it with `fl set build_home <location>`), so it reads `was in dev → drn-03`, and
-undoing that first deploy puts the build back at `dev`.
+Code comes from somewhere too: a build's first deploy starts at `build_home` (default `hq`,
+change it with `fl set build_home <location>`), so it reads `was in hq → drn-03`, and
+undoing that first deploy puts the build back at `hq`.
 
 Branch age, last commit and merge state come from **local Git** and work offline and airgapped.
 
@@ -281,6 +281,52 @@ field-ledger show feat/secure-cdr --repo /path/to/repo   # no fetch
 
 The deployed commit is recorded, not compared: nothing yet tells you the branch has moved
 on since. PR/MR status from GitHub or GitLab is optional and needs a token.
+
+### Sample: one build, end to end (v0)
+
+The stage 5 trial (2026-10-28), run on a fresh clone of this repo. Every command reads
+local Git only; nothing is fetched.
+
+```mermaid
+sequenceDiagram
+    actor You
+    participant CLI as field-ledger / fl
+    participant Code as code clone (local Git)
+    participant Ledger as ledger repo (./ledger)
+
+    You->>CLI: fl init teyr
+    CLI->>Ledger: git init, events/, .gitignore
+    CLI-->>You: OK, device ccfd8d4f, name teyr
+
+    You->>CLI: field-ledger show feat/build-4
+    CLI->>Code: last commit, merged into origin/main?
+    CLI-->>You: last commit 7d2ab65, merged: yes
+
+    You->>CLI: field-ledger deploy feat/build-4 drone-3
+    CLI->>Code: head of feat/build-4
+    Code-->>CLI: 7d2ab65
+    CLI->>Ledger: read settings.json, build_home = hq
+    CLI->>Ledger: commit 4 events: ADD hq and drone-3 (fixed locations),<br/>ADD feat/build-4 at hq, MOVE hq > drone-3 @7d2ab65
+    CLI-->>You: ✓ feat/build-4 · build · was in hq → drone-3, deployed as 7d2ab65
+
+    You->>CLI: field-ledger deploy feat/build-4 site-b
+    CLI->>Ledger: commit 2 events: ADD site-b, MOVE drone-3 > site-b
+    CLI-->>You: ✓ feat/build-4 · build · was in drone-3 → site-b, deployed as 7d2ab65
+
+    You->>CLI: fl where feat/build-4
+    CLI->>Ledger: replay the event files
+    CLI-->>You: feat/build-4: site-b
+
+    You->>CLI: field-ledger undo (inside 10 minutes)
+    CLI->>Ledger: commit VOID of your last event, the MOVE to site-b
+    CLI-->>You: void 80cf3d96: undo
+
+    You->>CLI: fl where feat/build-4
+    CLI-->>You: feat/build-4: drone-3
+```
+
+The tool repo's `git status` stays clean throughout: the ledger is its own repo in a
+gitignored folder.
 
 ### Stale-work board (v0)
 
@@ -337,7 +383,7 @@ Never commit them. Copying the token file is part of takeover.
 | `conflict_window` | `5 min` device / `60 min` prompted or import | How close two moves must be to get a ⚠ |
 | `nudge_after` | `1` working day | When an unresolved ⚠ nudges the field-ops owner |
 | `ledger_dir` | `./ledger` | Where the ledger's own repo lives |
-| `build_home` | `dev` | Where a build is before its first deploy. **v0**: `fl set build_home <location>`; stored in the ledger repo's `settings.json`, so every device shares it |
+| `build_home` | `hq` | Where a build is before its first deploy. **v0**: `fl set build_home <location>`; stored in the ledger repo's `settings.json`, so every device shares it |
 
 ---
 

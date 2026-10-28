@@ -91,9 +91,9 @@ def submit_move(ctx: Context, cmd: Move, confirmed: bool = False,
     item, verdict = validate_move(cmd, ctx.actor, state, ctx.now())
     if not should_write(verdict, confirmed):
         return Outcome(verdict)
+    # src is where the log last had it, not the typed 'from': that was checked above
     return write(ctx, verdict, "MOVE", event_id, extra_flags, item=item,
-                 src=canonical_destination(cmd.src, state),
-                 dst=canonical_destination(cmd.dst, state))
+                 src=state.where.get(item, ""), dst=canonical_destination(cmd.dst, state))
 
 
 def submit_deploy(ctx: Context, branch: str, dst: str, sha: str = "",
@@ -105,22 +105,26 @@ def submit_deploy(ctx: Context, branch: str, dst: str, sha: str = "",
     commit as the move, so a deploy is one thing in the log. A destination that is
     already a node (a location node, or an item like DRN-03) is used as it stands; a
     plain-string location from an older ledger stays a plain string.
+
+    A new build starts at `build_home` (a setting, default 'dev'): code comes from
+    somewhere too, so its first deploy has a real 'from' like any other move.
     """
     state = current_state(ctx)
     target = node_id(dst, state) or canonical_location(dst)
     verdict = validate_deploy(branch, target, state)
     if not should_write(verdict, confirmed):
         return Outcome(verdict)
+    home = canonical_destination(store.read_settings(ctx.ledger_dir)["build_home"], state)
+    src = state.where.get(branch, home)
     new = []
-    if target not in state.items and target not in state.locations:
-        new.append(make_event(ctx, "ADD", ahead=len(new), item=target, note="location",
-                              flags=("fixed",)))
+    for place in dict.fromkeys([src, target]):      # home first, then the target
+        if place not in state.items and place not in state.locations:
+            new.append(make_event(ctx, "ADD", ahead=len(new), item=place, note="location",
+                                  flags=("fixed",)))
     if branch not in state.items:
-        new.append(make_event(ctx, "ADD", ahead=len(new), item=branch, note="build"))
+        new.append(make_event(ctx, "ADD", ahead=len(new), item=branch, dst=home, note="build"))
     confirmed_flag = ("confirmed",) if verdict.kind == Kind.CONFIRM else ()
-    # src: its parent before the move, so the log can say where it came from
-    move = make_event(ctx, "MOVE", ahead=len(new), item=branch,
-                      src=state.where.get(branch, ""), dst=target, sha=sha,
+    move = make_event(ctx, "MOVE", ahead=len(new), item=branch, src=src, dst=target, sha=sha,
                       flags=verdict.flags + confirmed_flag)
     store.add(ctx.conn, ctx.ledger_dir, new + [move])
     return Outcome(verdict, move)

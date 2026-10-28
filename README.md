@@ -119,7 +119,9 @@ If the "was in" doesn't match what's in your hand, you have the wrong ID: tap Un
 Status: **v0** `field-ledger deploy` prints the readback with the previous location
 (`✓ feat/x · build · was in site-b → drn-03, deployed as 4b7e0d1`) and `fl undo` /
 `field-ledger undo` cancel it. `fl move` still prints the logged event
-(`logged: 5918e80f  BAT-02  ? > site-b`); its readback is **planned**.
+(`logged: 5918e80f  BAT-02  van > site-b`); its readback is **planned**. The "from" side
+is where the log last had the item, whether or not you typed one; a typed one is only
+checked against it (`from-mismatch` below).
 
 ### Text grammar (v0)
 
@@ -262,6 +264,10 @@ branch's head commit in the event's `sha` field (full SHA; empty if unknown), re
 `--repo` without fetching; with no such branch there the move is still recorded and the
 readback says `commit unknown`. `field-ledger undo` takes it back within 10 minutes.
 
+Code comes from somewhere too: a build's first deploy starts at `build_home` (default `dev`,
+change it with `fl set build_home <location>`), so it reads `was in dev → drn-03`, and
+undoing that first deploy puts the build back at `dev`.
+
 Branch age, last commit and merge state come from **local Git** and work offline and airgapped.
 
 ```bash
@@ -331,6 +337,7 @@ Never commit them. Copying the token file is part of takeover.
 | `conflict_window` | `5 min` device / `60 min` prompted or import | How close two moves must be to get a ⚠ |
 | `nudge_after` | `1` working day | When an unresolved ⚠ nudges the field-ops owner |
 | `ledger_dir` | `./ledger` | Where the ledger's own repo lives |
+| `build_home` | `dev` | Where a build is before its first deploy. **v0**: `fl set build_home <location>`; stored in the ledger repo's `settings.json`, so every device shares it |
 
 ---
 

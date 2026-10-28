@@ -70,6 +70,7 @@ security labels from a scanner (set by hand for now).
 | `conflict_window` | 5 min device / 60 min prompted or import |
 | `nudge_after` | 1 working day |
 | `ledger_dir` | `./ledger` |
+| `build_home` | `dev` (ledger repo `settings.json`; `fl set build_home <loc>`) |
 
 ## Working here
 

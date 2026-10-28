@@ -27,7 +27,7 @@ Ask = Callable[[str], bool]
 
 def describe(e: Event) -> str:
     if e.kind == "MOVE":
-        return f"{e.item}  {e.src or '?'} > {e.dst}" + (f"  @{e.sha[:7]}" if e.sha else "")
+        return f"{e.item}  {e.src or '—'} > {e.dst}" + (f"  @{e.sha[:7]}" if e.sha else "")
     if e.kind == "ADD":
         return f"{e.item}  added at {e.dst} ({e.note})" if e.dst else f"{e.item}  added ({e.note})"
     if e.kind == "VOID":
@@ -169,6 +169,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("where").add_argument("item")
     sub.add_parser("at").add_argument("location", nargs="+")
     sub.add_parser("undo", help="cancel your own last event, within 10 minutes")
+    setting = sub.add_parser("set", help="change a ledger setting, e.g. 'set build_home lab'")
+    setting.add_argument("key", choices=sorted(store.DEFAULT_SETTINGS))
+    setting.add_argument("value", nargs="+")
     void = sub.add_parser("void", help="cancel an event (it stays in the log, marked void)")
     void.add_argument("id")
     void.add_argument("reason", nargs="+")
@@ -242,6 +245,11 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
         return do_kit(ctx, [group], plan_more)
     if args.command == "import":
         return do_import(ctx, args.file)
+    if args.command == "set":
+        value = canonical_location(" ".join(args.value))
+        store.write_setting(ctx.ledger_dir, args.key, value)
+        print(f"OK\n  {args.key}: {value}")
+        return 0
     if args.command == "merge":
         merged = store.merge(ctx.conn, args.file)
         store.sync(ctx.conn, ctx.ledger_dir)

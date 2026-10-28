@@ -370,6 +370,7 @@ Every remote branch is a tool checked out; a branch merged and deleted is a tool
 | `merged-not-deleted` | Every commit already in `--base` | Delete the remote branch |
 | `in-flight` | PR open and moving | Nothing |
 | `branch-gone` | The ledger has it deployed, but its branch no longer exists | Confirm with `fl where`, update with `fl move <build> <location>` |
+| `base` | The base branch itself (e.g. `main`), deployed somewhere per the ledger | Nothing; Build shows which commit, and `(moved on)` once `main` has moved past it |
 
 ```bash
 python -m field_ledger --repo /path/to/repo --base origin/develop

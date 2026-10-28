@@ -7,7 +7,7 @@ empty slot is a question someone has to answer.
 
 | Mode | Tracks | Answers |
 |---|---|---|
-| Kit | Physical items: batteries, cameras, gazebos, vans | Where is BAT-12, and who moved it last? |
+| Field | Physical items: batteries, cameras, gazebos, vans | Where is BAT-12, and who moved it last? |
 | Code | Branches and builds | Which build is at which location? Which branches are going stale? |
 
 Both modes share one model (nodes, events, one replay function) and one command grammar.
@@ -16,6 +16,11 @@ Python 3.10+, standard library only. Nothing to install on a field laptop.
 
 > **Status.** This README describes the target design. Each section says what works today
 > (**v0**) and what is **planned**. If they disagree, the v0 line is what the code does.
+>
+> **Decisions vs mechanics.** Design decisions (the model, what events mean, the conflict and
+> trust rules, scope, deadlines) live in a private design doc. This README is canonical for
+> mechanics: commands, grammar, settings, file formats and setup. If the two disagree, the
+> decision stands and this README gets fixed.
 
 ---
 
@@ -242,7 +247,7 @@ and timestamped at import time.
 
 ## Code mode
 
-A branch or build is a node of kind `branch`. Its parent is where it is deployed (v0):
+A build is a node of kind `build`. Its parent is where it is deployed:
 
 ```bash
 field-ledger deploy feat/secure-cdr drn-03 --repo /path/to/repo

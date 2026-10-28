@@ -7,7 +7,7 @@ empty slot is a question someone has to answer.
 
 | Mode | Tracks | Answers |
 |---|---|---|
-| Kit | Physical items: batteries, cameras, gazebos, vans | Where is BAT-12, and who moved it last? |
+| Field | Physical items: batteries, cameras, gazebos, vans | Where is BAT-12, and who moved it last? |
 | Code | Branches and builds | Which build is at which location? Which branches are going stale? |
 
 Both modes share one model (nodes, events, one replay function) and one command grammar.
@@ -243,7 +243,7 @@ and timestamped at import time.
 
 ## Code mode
 
-A branch or build is a node of kind `branch`. Its parent is where it is deployed:
+A build is a node of kind `build`. Its parent is where it is deployed:
 
 ```
 deploy feat/secure-cdr > DRONE-3      (planned)

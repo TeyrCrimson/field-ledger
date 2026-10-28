@@ -37,7 +37,7 @@ security labels from a scanner (set by hand for now).
 ## Model
 
 - **One node type.** Every ID'd thing is a node with a `kind`; each kind defines its own states
-  (battery: ready / depleted / storage / damaged). Builds are nodes of kind `build`/`branch`.
+  (battery: ready / depleted / storage / damaged). Builds are nodes of kind `build`.
 - **Locations** are nodes flagged `fixed`: they can hold nodes but aren't moved on the fast path.
   External locations (`Logistics store`, `Lost`) are where custody exits go.
 - **Contents follow their container** in one event. **Every move is cycle-checked.**

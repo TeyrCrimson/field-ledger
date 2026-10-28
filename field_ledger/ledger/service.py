@@ -10,7 +10,7 @@ the caller asks the person, then calls again with confirmed=True.
 import sqlite3
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -34,6 +34,7 @@ class Context:
     device: str
     now: Callable[[], datetime]
     ledger_dir: Path                # the record; `conn` is its cache, synced on open
+    batch: str = ""                 # set while one command writes several events
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,12 @@ def make_event(ctx: Context, kind: str, event_id: str | None = None, ahead: int 
     """`ahead` reserves seqs for events built in one batch before any of them is written."""
     return Event(id=event_id or str(uuid.uuid4()), ts=ctx.now(), device=ctx.device,
                  seq=store.next_seq(ctx.conn, ctx.device) + ahead, actor=ctx.actor, kind=kind,
-                 **fields)
+                 batch=ctx.batch, **fields)
+
+
+def one_command(ctx: Context) -> Context:
+    """Everything written through the returned context is one command to undo."""
+    return replace(ctx, batch=str(uuid.uuid4()))
 
 
 def should_write(verdict: Verdict, confirmed: bool) -> bool:
@@ -109,7 +115,7 @@ def submit_deploy(ctx: Context, branch: str, dst: str, sha: str = "",
     A new build starts at `build_home` (a setting, default 'hq'): code comes from
     somewhere too, so its first deploy has a real 'from' like any other move.
     """
-    state = current_state(ctx)
+    ctx, state = one_command(ctx), current_state(ctx)
     target = node_id(dst, state) or canonical_location(dst)
     verdict = validate_deploy(branch, target, state)
     if not should_write(verdict, confirmed):
@@ -130,11 +136,20 @@ def submit_deploy(ctx: Context, branch: str, dst: str, sha: str = "",
     return Outcome(verdict, move)
 
 
-def submit_undo(ctx: Context, within: timedelta = UNDO_WINDOW) -> Outcome:
-    """Undo is a VOID of your own last event, offered for `within` only.
+def used_since(state: State, node: str, command: list[Event]) -> bool:
+    """Someone has moved, filled or named `node` outside this command: their event needs it."""
+    ids = {e.id for e in command}
+    return any(e.id not in ids and node in (e.item, e.src, e.dst) for e in state.events)
 
-    After that the event has been read by someone else and a bare undo is no longer
-    honest: `void <id> <reason>` says why.
+
+def submit_undo(ctx: Context, within: timedelta = UNDO_WINDOW) -> Outcome:
+    """Undo takes back your own last command, offered for `within` only.
+
+    One command can write several events (a deploy's new nodes and its move, a kit, a
+    whole import); they share a batch and are voided together, in one commit. A node the
+    command created that someone has used since is left alone: their event needs it.
+    After the window the events have been read by someone else and a bare undo is no
+    longer honest: `void <id> <reason>` says why.
     """
     state = current_state(ctx)
     target = next((e for e in reversed(state.events)
@@ -147,7 +162,16 @@ def submit_undo(ctx: Context, within: timedelta = UNDO_WINDOW) -> Outcome:
             f"{target.id[:8]} is {int(age.total_seconds() // 60)} minutes old; undo is only "
             f"offered for {int(within.total_seconds() // 60)}. "
             f"Use `void {target.id[:8]} <reason>`.",)))
-    return submit_void(ctx, Void(target.id, "undo"))
+    command = [e for e in state.events if e.actor == ctx.actor and e.kind != "VOID"
+               and (e.id == target.id or (target.batch and e.batch == target.batch))]
+    kept = sorted({e.item for e in command
+                   if e.kind == "ADD" and used_since(state, e.item, command)})
+    undone = [e for e in command if not (e.kind == "ADD" and e.item in kept)]
+    voids = [make_event(ctx, "VOID", ahead=n, ref=e.id, note="undo") for n, e in enumerate(undone)]
+    store.add(ctx.conn, ctx.ledger_dir, voids)
+    messages = ((f"Took back {len(voids)} events from one command.",) if len(voids) > 1 else ())
+    messages += tuple(f"Kept {node}: used since by someone else." for node in kept)
+    return Outcome(Verdict(Kind.WARN if kept else Kind.ACCEPT, messages), voids[-1])
 
 
 def submit_void(ctx: Context, cmd: Void, event_id: str | None = None,
@@ -168,7 +192,7 @@ def submit_rename(ctx: Context, cmd: Rename, event_id: str | None = None,
 
 def add_items(ctx: Context, planned: list[PlannedAdd]) -> list[Event]:
     """Kit creation. Items already in the kit are skipped (kit loading is re-runnable)."""
-    existing = set(current_state(ctx).items)
+    ctx, existing = one_command(ctx), set(current_state(ctx).items)
     new = [p for p in planned if p.item not in existing]
     written = [make_event(ctx, "ADD", ahead=n, item=p.item, dst=p.location, note=p.name)
                for n, p in enumerate(new)]
@@ -210,7 +234,8 @@ def import_line(ctx: Context, line_no: int, text: str, event_id: str, known: set
 
 
 def import_text(ctx: Context, text: str) -> list[ImportLine]:
-    commands = extract_commands(text)
+    """One import is one command: undo takes the whole file back."""
+    ctx, commands = one_command(ctx), extract_commands(text)
     known = store.existing_ids(ctx.conn)
     repeated = repeats(commands)
     return [import_line(ctx, n, line, eid, known, repeated.get(n))

@@ -10,6 +10,7 @@ import pytest
 from field_ledger.cli import main
 from field_ledger.ledger import service
 from field_ledger.ledger.cli import main as fl_main
+from field_ledger.ledger.kit import Group, plan_more
 from field_ledger.ledger.model import Kind, Move
 from field_ledger.ledger.state import fold, items_at, location_of
 from field_ledger.ledger.store import read_events
@@ -171,8 +172,42 @@ def test_undo_inside_the_window(repo, tmp_path, capsys):
     capsys.readouterr()
     assert main(["undo", "--ledger-dir", str(tmp_path / "ledger"),
                  "--db", str(tmp_path / "l.db")], now=clock) == 0
-    assert "void" in capsys.readouterr().out
-    assert location_of(fold(read_events(tmp_path / "ledger")), "pending") == "hq"   # back home
+    out = capsys.readouterr().out
+    assert "Took back 4 events from one command." in out      # hq, drn-03, the build, the move
+    state = fold(read_events(tmp_path / "ledger"))
+    assert "pending" not in state.items and state.fixed == set()
+
+
+def test_undo_leaves_a_node_someone_has_used_since(repo, tmp_path, capsys):
+    """Yoeng put a battery in drn-03 after my deploy made it: drn-03 stays, my move goes."""
+    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert ledger(tmp_path, "--actor", "yoeng", "add", "BAT", "1", "--at", "van") == 0
+    assert ledger(tmp_path, "--actor", "yoeng", "move", "BAT-01", "drn-03") == 0
+    capsys.readouterr()
+    assert main(["undo", "--ledger-dir", str(tmp_path / "ledger"),
+                 "--db", str(tmp_path / "l.db")], now=Clock()) == 0
+    assert "Kept drn-03: used since by someone else." in capsys.readouterr().out
+    state = fold(read_events(tmp_path / "ledger"))
+    assert state.fixed == {"drn-03"} and "pending" not in state.items
+    assert location_of(state, "BAT-01") == "drn-03"
+
+
+def test_undo_takes_back_a_whole_kit(tmp_path):
+    ctx = make_ctx(tmp_path / "l.db")
+    seed(ctx)                                       # two kit commands: BAT x3, then CAM x1
+    service.add_items(ctx, plan_more(Group("BAT", "Battery", 2, "van"), service.current_state(ctx)))
+    outcome = service.submit_undo(ctx)
+    assert outcome.verdict.messages == ("Took back 2 events from one command.",)
+    assert sorted(service.current_state(ctx).items) == ["BAT-01", "BAT-02", "BAT-03", "CAM-01"]
+
+
+def test_undo_takes_back_a_whole_import(tmp_path):
+    ctx = make_ctx(tmp_path / "l.db")
+    seed(ctx)
+    service.import_text(ctx, "MOVE BAT-01 > van\nMOVE BAT-02 > van\n")
+    assert service.submit_undo(ctx).verdict.messages == ("Took back 2 events from one command.",)
+    state = service.current_state(ctx)
+    assert location_of(state, "BAT-01") == location_of(state, "BAT-02") == "truck"
 
 
 def test_undo_is_refused_after_the_window(repo, tmp_path, capsys):

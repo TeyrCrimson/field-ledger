@@ -44,10 +44,21 @@ def repo(tmp_path):
 
 def test_deploy_readback_shows_the_previous_location(repo, tmp_path, capsys):
     assert deploy(tmp_path, repo, "pending", "drn-03") == 0
-    assert capsys.readouterr().out.startswith("✓ pending · branch · new → drn-03, deployed as ")
+    assert capsys.readouterr().out.startswith("✓ pending · build · new → drn-03, deployed as ")
     assert deploy(tmp_path, repo, "pending", "site-b") == 0
-    assert "✓ pending · branch · was in drn-03 → site-b" in capsys.readouterr().out
+    assert "✓ pending · build · was in drn-03 → site-b" in capsys.readouterr().out
 
+
+def test_deploy_makes_a_build_node_and_logs_where_it_came_from(repo, tmp_path, capsys):
+    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert deploy(tmp_path, repo, "pending", "site-b") == 0
+    state = fold(read_events(tmp_path / "ledger"))
+    assert state.items["pending"] == "build"
+    first, second = [e for e in state.events if e.kind == "MOVE"]
+    assert (first.src, second.src) == ("", "drn-03")
+    capsys.readouterr()
+    assert ledger(tmp_path, "where", "pending") == 0
+    assert "pending  drn-03 > site-b" in capsys.readouterr().out
 
 def test_deploy_records_the_head_commit_at_the_time(repo, tmp_path, capsys):
     assert deploy(tmp_path, repo, "pending", "drn-03") == 0
@@ -64,7 +75,7 @@ def test_deploy_records_the_head_commit_at_the_time(repo, tmp_path, capsys):
 def test_deploy_without_the_code_clone_says_commit_unknown(repo, tmp_path, capsys):
     assert deploy(tmp_path, repo, "feat/elsewhere", "drn-03") == 0
     out = capsys.readouterr().out
-    assert "✓ feat/elsewhere · branch · new → drn-03, commit unknown" in out
+    assert "✓ feat/elsewhere · build · new → drn-03, commit unknown" in out
     assert show(tmp_path, repo, "pending") == 0      # and the deploy is really in the ledger
     capsys.readouterr()
     assert ledger(tmp_path, "where", "feat/elsewhere") == 0

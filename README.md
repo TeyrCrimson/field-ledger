@@ -117,7 +117,7 @@ Every move prints a **readback** with the item's previous location:
 If the "was in" doesn't match what's in your hand, you have the wrong ID: tap Undo.
 
 Status: **v0** `field-ledger deploy` prints the readback with the previous location
-(`✓ feat/x · branch · was in site-b → drn-03, deployed as 4b7e0d1`) and `fl undo` /
+(`✓ feat/x · build · was in site-b → drn-03, deployed as 4b7e0d1`) and `fl undo` /
 `field-ledger undo` cancel it. `fl move` still prints the logged event
 (`logged: 5918e80f  BAT-02  ? > site-b`); its readback is **planned**.
 
@@ -253,7 +253,7 @@ A build is a node of kind `build`. Its parent is where it is deployed:
 
 ```bash
 field-ledger deploy feat/secure-cdr drn-03 --repo /path/to/repo
-# ✓ feat/secure-cdr · branch · was in site-b → drn-03, deployed as 4b7e0d1
+# ✓ feat/secure-cdr · build · was in site-b → drn-03, deployed as 4b7e0d1
 ```
 
 The destination may be a location (created as a fixed location node the first time it is

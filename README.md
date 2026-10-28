@@ -269,7 +269,9 @@ contract it must keep. The board refreshes every 10 seconds; nothing can be chan
      New-NetFirewallRule -DisplayName "field-ledger hub" -Direction Inbound -Protocol TCP -LocalPort 8765 -Action Allow
      ```
 
-  Not yet tried on our laptops: check it before the first field deployment.
+  Tried 2026-10-28 on a Windows 11 laptop with option 1: a phone on the same Wi-Fi opened the
+  board. Watch for Notepad saving `.wslconfig.txt`; WSL only reads `.wslconfig`. The Ubuntu
+  laptops and option 2 are not tried yet.
 
 ### Takeover: the hub laptop dies
 

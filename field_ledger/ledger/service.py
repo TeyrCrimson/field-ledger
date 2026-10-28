@@ -28,6 +28,9 @@ from .validate import (canonical_destination, check_id_destination, combine, nod
 
 UNDO_WINDOW = timedelta(minutes=10)      # `undo_minutes`, until settings are a thing
 CONFLICT_WINDOWS = (timedelta(minutes=5), timedelta(minutes=60))   # `conflict_window`: device, import
+# A phone clock this far ahead of the hub's is wrong, not early: its event is flagged `future`.
+# The device conflict window: a phone fast by less can only reorder moves that would ⚠ anyway.
+FUTURE_TOLERANCE = timedelta(minutes=5)
 
 
 @dataclass
@@ -39,6 +42,8 @@ class Context:
     ledger_dir: Path                # the record; `conn` is its cache, synced on open
     batch: str = ""                 # set while one command writes several events
     time_source: str = ""           # 'import' while importing a chat export
+    occurred_at: datetime | None = None   # a phone's own time for its write; else now()
+    seq: int | None = None          # a phone's own count of its writes; else the next one here
 
 
 @dataclass(frozen=True)
@@ -68,12 +73,22 @@ def deployed_at(ctx: Context, item: str) -> str:
     return location_of(current_state(ctx), item)
 
 
+def occurred(ctx: Context) -> datetime:
+    return ctx.occurred_at or ctx.now()
+
+
 def make_event(ctx: Context, kind: str, event_id: str | None = None, ahead: int = 0,
-               **fields) -> Event:
-    """`ahead` reserves seqs for events built in one batch before any of them is written."""
-    return Event(id=event_id or str(uuid.uuid4()), ts=ctx.now(), device=ctx.device,
-                 seq=store.next_seq(ctx.conn, ctx.device) + ahead, actor=ctx.actor, kind=kind,
-                 batch=ctx.batch, time_source=ctx.time_source, **fields)
+               flags: tuple[str, ...] = (), **fields) -> Event:
+    """`ahead` reserves seqs for events built in one batch before any of them is written.
+    A phone's events keep the time and seq it gave them, so a write that waited in its queue
+    still sorts where it happened; the hub's own clock goes in recorded_at."""
+    now = ctx.now()
+    if occurred(ctx) - now > FUTURE_TOLERANCE:
+        flags += ("future",)
+    seq = ctx.seq if ctx.seq is not None else store.next_seq(ctx.conn, ctx.device)
+    return Event(id=event_id or str(uuid.uuid4()), ts=occurred(ctx), recorded_at=now,
+                 device=ctx.device, seq=seq + ahead, actor=ctx.actor, kind=kind,
+                 batch=ctx.batch, time_source=ctx.time_source, flags=flags, **fields)
 
 
 def one_command(ctx: Context) -> Context:
@@ -101,7 +116,7 @@ def write(ctx: Context, verdict: Verdict, kind: str, event_id: str | None,
 def submit_move(ctx: Context, cmd: Move, confirmed: bool = False,
                 event_id: str | None = None, extra_flags: tuple[str, ...] = ()) -> Outcome:
     state = current_state(ctx)
-    item, verdict = validate_move(cmd, ctx.actor, state, ctx.now())
+    item, verdict = validate_move(cmd, ctx.actor, state, occurred(ctx))
     if not should_write(verdict, confirmed):
         return Outcome(verdict)
     # src is where the log last had it, not the typed 'from': that was checked above
@@ -146,13 +161,14 @@ def submit_deploy(ctx: Context, branch: str, dst: str, sha: str = "",
     return Outcome(verdict, move)
 
 
-def submit_label(ctx: Context, branch: str, label: str, reason: str = "") -> Outcome:
+def submit_label(ctx: Context, branch: str, label: str, reason: str = "",
+                 event_id: str | None = None) -> Outcome:
     """SEC: a build's security label, set by hand (no scanner). Latest wins, and a VOID
     of it brings the previous label back, because replay skips voided events."""
     item, label, verdict = validate_label(branch, label, current_state(ctx))
     if item is None:
         return Outcome(verdict)
-    return write(ctx, verdict, "SEC", None, (), item=item, dst=label, note=reason)
+    return write(ctx, verdict, "SEC", event_id, (), item=item, dst=label, note=reason)
 
 
 def open_conflicts(state: State, windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS
@@ -161,13 +177,14 @@ def open_conflicts(state: State, windows: tuple[timedelta, timedelta] = CONFLICT
 
 
 def submit_resolve(ctx: Context, item: str, pick: str,
-                   windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS) -> Outcome:
+                   windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS,
+                   event_id: str | None = None) -> Outcome:
     """RESOLVE: confirm one candidate of a ⚠. Picking the other one moves the node there."""
     state = current_state(ctx)
     item, pick, verdict = validate_resolve(item, pick, state, conflicts(state, *windows))
     if item is None:
         return Outcome(verdict)
-    return write(ctx, verdict, "RESOLVE", None, (), item=item, src=state.where.get(item, ""),
+    return write(ctx, verdict, "RESOLVE", event_id, (), item=item, src=state.where.get(item, ""),
                  dst=pick)
 
 
@@ -177,21 +194,23 @@ def used_since(state: State, node: str, command: list[Event]) -> bool:
     return any(e.id not in ids and node in (e.item, e.src, e.dst) for e in state.events)
 
 
-def submit_undo(ctx: Context, within: timedelta = UNDO_WINDOW) -> Outcome:
+def submit_undo(ctx: Context, within: timedelta = UNDO_WINDOW,
+                event_id: str | None = None) -> Outcome:
     """Undo takes back your own last command, offered for `within` only.
 
     One command can write several events (a deploy's new nodes and its move, a kit, a
     whole import); they share a batch and are voided together, in one commit. A node the
     command created that someone has used since is left alone: their event needs it.
     After the window the events have been read by someone else and a bare undo is no
-    longer honest: `void <id> <reason>` says why.
+    longer honest: `void <id> <reason>` says why. The window starts when the event reached
+    the ledger, so a write that waited in a phone's queue can still be undone on arrival.
     """
     state = current_state(ctx)
     target = next((e for e in reversed(state.events)
                    if e.actor == ctx.actor and e.kind != "VOID"), None)
     if target is None:
         return Outcome(Verdict(Kind.REJECT, ("Nothing of yours left to undo.",)))
-    age = ctx.now() - target.ts
+    age = ctx.now() - (target.recorded_at or target.ts)
     if age > within:
         return Outcome(Verdict(Kind.REJECT, (
             f"{target.id[:8]} is {int(age.total_seconds() // 60)} minutes old; undo is only "
@@ -202,7 +221,9 @@ def submit_undo(ctx: Context, within: timedelta = UNDO_WINDOW) -> Outcome:
     kept = sorted({e.item for e in command
                    if e.kind == "ADD" and used_since(state, e.item, command)})
     undone = [e for e in command if not (e.kind == "ADD" and e.item in kept)]
-    voids = [make_event(ctx, "VOID", ahead=n, ref=e.id, note="undo") for n, e in enumerate(undone)]
+    ids = batch_ids(event_id, len(undone))        # a resent undo must not undo the one before
+    voids = [make_event(ctx, "VOID", ids[n], ahead=n, ref=e.id, note="undo")
+             for n, e in enumerate(undone)]
     store.add(ctx.conn, ctx.ledger_dir, voids)
     messages = ((f"Took back {len(voids)} events from one command.",) if len(voids) > 1 else ())
     messages += tuple(f"Kept {node}: used since by someone else." for node in kept)
@@ -225,11 +246,20 @@ def submit_rename(ctx: Context, cmd: Rename, event_id: str | None = None,
     return write(ctx, verdict, "RENAME", event_id, extra_flags, src=names[0], dst=names[1])
 
 
-def add_items(ctx: Context, planned: list[PlannedAdd]) -> list[Event]:
-    """Kit creation. Items already in the kit are skipped (kit loading is re-runnable)."""
+def batch_ids(first: str | None, count: int) -> list[str | None]:
+    """The given id for the first event, the rest derived from it: the same ids every time."""
+    if not first:
+        return [None] * count
+    return [first] + [str(uuid.uuid5(uuid.UUID(first), str(n))) for n in range(1, count)]
+
+
+def add_items(ctx: Context, planned: list[PlannedAdd], event_id: str | None = None) -> list[Event]:
+    """Kit creation. Items already in the kit are skipped (kit loading is re-runnable).
+    A phone names the first event; the rest are derived from it, so a resend is spotted."""
     ctx, existing = one_command(ctx), set(current_state(ctx).items)
     new = [p for p in planned if p.item not in existing]
-    written = [make_event(ctx, "ADD", ahead=n, item=p.item, dst=p.location, note=p.name)
+    ids = batch_ids(event_id, len(new))
+    written = [make_event(ctx, "ADD", ids[n], ahead=n, item=p.item, dst=p.location, note=p.name)
                for n, p in enumerate(new)]
     store.add(ctx.conn, ctx.ledger_dir, written)      # one commit for the whole kit
     return written

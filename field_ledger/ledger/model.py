@@ -61,7 +61,7 @@ Command = Move | Where | At | Void | Rename
 @dataclass(frozen=True)
 class Event:
     id: str
-    ts: datetime              # timezone-aware, UTC
+    ts: datetime              # occurred_at: timezone-aware, from the logging device's clock
     device: str
     seq: int                  # per-device counter: ordering survives clock drift on one device
     actor: str
@@ -75,3 +75,4 @@ class Event:
     batch: str = ""           # shared by the events one command wrote; undo takes them back together
     time_source: str = ""     # '' = device clock; 'import' (or 'prompted'): approximate, wider ⚠ window
     flags: tuple[str, ...] = field(default=())
+    recorded_at: datetime | None = None   # when the hub (or `fl`) wrote it; None before F3

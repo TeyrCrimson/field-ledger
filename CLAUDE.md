@@ -69,6 +69,11 @@ security labels from a scanner (set by hand for now).
 - **Undo:** VOIDs every event of your own last command (they share a `batch`: a deploy, a kit,
   a whole import), inside `undo_minutes` (default 10); refused after. A node the command
   created that someone has used since is left alone.
+- **Phone writes:** the phone makes each write's id, occurred_at and seq; the hub stamps
+  recorded_at and logs an id once. occurred_at more than 5 min after recorded_at gets a `future`
+  flag; replay counts each event at min(occurred_at, recorded_at); undo's window starts at
+  recorded_at. A queued write the hub would refuse or ask about goes to
+  `needs-a-look/<id>.json` in the ledger repo, settled in place (log / dismiss), never dropped.
 - **Derived state** (code mode): branch age and last commit from local Git, always, offline.
 
 ## Settings (defaults)
@@ -86,7 +91,7 @@ security labels from a scanner (set by hand for now).
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install pytest
-.venv/bin/python -m pytest -q      # all green; the count only grows (102 on 2026-10-28)
+.venv/bin/python -m pytest -q      # all green; the count only grows (188 on 2026-10-28)
 ```
 
 - Every change keeps the whole suite green and adds tests for its own behaviour.

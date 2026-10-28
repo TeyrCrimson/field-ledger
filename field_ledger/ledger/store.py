@@ -32,11 +32,12 @@ CREATE TABLE IF NOT EXISTS events (
     sha    TEXT NOT NULL DEFAULT '',
     batch  TEXT NOT NULL DEFAULT '',
     time_source TEXT NOT NULL DEFAULT '',
-    flags  TEXT NOT NULL DEFAULT ''
+    flags  TEXT NOT NULL DEFAULT '',
+    recorded_at TEXT NOT NULL DEFAULT ''
 );
 """
 COLUMNS = ("id", "ts", "device", "seq", "actor", "kind", "item", "src", "dst", "ref", "note",
-           "sha", "batch", "time_source", "flags")
+           "sha", "batch", "time_source", "flags", "recorded_at")
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -72,17 +73,23 @@ def ensure_device(conn: sqlite3.Connection) -> str:
 
 # --- events --------------------------------------------------------------------
 
+def when(text: str) -> datetime | None:
+    """An optional time: events from before F3 have no recorded_at."""
+    return datetime.fromisoformat(text) if text else None
+
+
 def to_row(event: Event) -> tuple:
     return (event.id, event.ts.isoformat(), event.device, event.seq, event.actor, event.kind,
             event.item, event.src, event.dst, event.ref, event.note, event.sha, event.batch,
             event.time_source,
-            ",".join(event.flags))
+            ",".join(event.flags), event.recorded_at.isoformat() if event.recorded_at else "")
 
 
 def from_row(row: tuple) -> Event:
     values = dict(zip(COLUMNS, row))
     values["ts"] = datetime.fromisoformat(values["ts"])
     values["flags"] = tuple(f for f in values["flags"].split(",") if f)
+    values["recorded_at"] = when(values["recorded_at"])
     return Event(**values)
 
 
@@ -232,6 +239,7 @@ def from_json(text: str) -> Event:
     data = json.loads(text)
     data["ts"] = datetime.fromisoformat(data["ts"])
     data["flags"] = tuple(data["flags"])
+    data["recorded_at"] = when(data.get("recorded_at", ""))
     return Event(**data)
 
 
@@ -266,6 +274,39 @@ def read_events(ledger_dir: Path) -> list[Event]:
     """Every event on disk. Read order does not matter: `state.fold` sorts."""
     return [from_json(p.read_text(encoding="utf-8"))
             for p in sorted(events_dir(ledger_dir).glob("*.json"))]
+
+
+# --- needs a look: queued writes the hub wouldn't log on arrival -------------------------
+#
+# Not events: nothing here is in the record until a person logs it. One file per arrival,
+# named by the event id it would have had, committed like an event so a dead hub loses none.
+# Settling writes who settled it and how into the file, which stays: a dismissal is findable.
+
+HELD_DIR = "needs-a-look"
+
+
+def held_file(ledger_dir: Path, event_id: str) -> Path:
+    return ledger_dir / HELD_DIR / f"{event_id}.json"
+
+
+def read_held(ledger_dir: Path, event_id: str) -> dict | None:
+    path = held_file(ledger_dir, event_id)
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+def needs_a_look(ledger_dir: Path) -> list[dict]:
+    """Arrivals nobody has settled yet, oldest first."""
+    entries = [json.loads(p.read_text(encoding="utf-8"))
+               for p in (ledger_dir / HELD_DIR).glob("*.json")]
+    return sorted((e for e in entries if not e.get("settled")), key=lambda e: e["recorded_at"])
+
+
+def write_held(ledger_dir: Path, entry: dict, message: str) -> None:
+    path = held_file(ledger_dir, entry["id"])
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps(entry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    run_git(ledger_dir, "add", "--", HELD_DIR)
+    run_git(ledger_dir, "commit", "-q", "-m", message)
 
 
 # --- keeping the cache honest ----------------------------------------------------

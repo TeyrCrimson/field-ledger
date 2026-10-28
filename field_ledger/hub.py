@@ -7,6 +7,11 @@ Python, and Python never writes HTML. POSTs to `/api/<command>` are the board's 
 go through the same service functions as `fl`, so the board accepts and refuses exactly what
 the CLI does. The hub is the ledger's only committer, so writes run one at a time.
 
+Phones work offline (field stage 3). A phone gives each write its event id, its time and its
+own sequence number, and queues it while the hub is away. The hub stamps recorded_at, logs an
+event id once (a resend answers "already logged"), and keeps a queued write it would refuse or
+ask about on the ledger's Needs a look list until a person settles it: nobody was there to ask.
+
 The hub binds to 127.0.0.1 unless told otherwise. There are no logins (the threat model is
 honest mistakes), so the LAN is opt-in, and every write names a person from the People list
 and a device.
@@ -17,6 +22,7 @@ import json
 import re
 import socket
 import threading
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -61,7 +67,7 @@ class BadRequest(ValueError):
 # --- reading -----------------------------------------------------------------------
 
 def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
-             people: list[str] | None = None) -> dict:
+             people: list[str] | None = None, needs_look: list[dict] | None = None) -> dict:
     """The replayed state in the shape the board reads. This shape is the contract
     between the hub and any front end (README "The hub"); the front end is free to change."""
     nodes = []
@@ -81,7 +87,7 @@ def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
     places = ({n["location"] for n in nodes if n["location"]}
               | {n for n in state.fixed if n not in state.where})
     return {"generated_at": now.isoformat(), "places": sorted(places), "nodes": nodes,
-            "people": people or []}
+            "people": people or [], "needs_look": needs_look or []}
 
 
 def board_state(ledger_dir: Path, now: datetime | None = None) -> dict:
@@ -90,7 +96,7 @@ def board_state(ledger_dir: Path, now: datetime | None = None) -> dict:
     state = fold(store.read_events(ledger_dir))
     state.containers = store.read_containers(ledger_dir)
     return snapshot(state, service.open_conflicts(state), now or utc_now(),
-                    store.read_people(ledger_dir))
+                    store.read_people(ledger_dir), store.needs_a_look(ledger_dir))
 
 
 # --- writing -------------------------------------------------------------------------
@@ -100,6 +106,40 @@ def text(body: dict, key: str, required: bool = True, limit: int = 200) -> str:
     if not isinstance(value, str) or len(value) > limit or (required and not value.strip()):
         raise BadRequest(f"'{key}' is missing or not text.")
     return value.strip()
+
+
+def phone_id(body: dict, required: bool) -> str | None:
+    """The event id the phone made for this write. A UUID, since it becomes a file name."""
+    value = body.get("id")
+    if value is None and not required:
+        return None
+    try:
+        if isinstance(value, str) and str(uuid.UUID(value)) == value:
+            return value
+    except ValueError:
+        pass
+    raise BadRequest("'id' must be a lowercase UUID.")
+
+
+def phone_time(body: dict) -> datetime | None:
+    """occurred_at: when the person tapped, by the phone's clock."""
+    value = body.get("occurred_at")
+    if value is None:
+        return None
+    try:
+        when = datetime.fromisoformat(value.replace("Z", "+00:00"))    # 3.10 can't read Z
+    except (AttributeError, ValueError):
+        when = None
+    if when is None or when.tzinfo is None:
+        raise BadRequest("'occurred_at' must be an ISO time with a zone, e.g. 2026-10-28T14:02Z.")
+    return when
+
+
+def phone_seq(body: dict) -> int | None:
+    value = body.get("seq")
+    if value is not None and (type(value) is not int or value < 1):
+        raise BadRequest("'seq' must be a whole number from 1.")
+    return value
 
 
 def reply(outcome: service.Outcome, readback: str = "") -> dict:
@@ -113,19 +153,20 @@ def reply(outcome: service.Outcome, readback: str = "") -> dict:
 def api_move(ctx: service.Context, body: dict) -> dict:
     before = service.current_state(ctx)
     outcome = service.submit_move(ctx, Move(text(body, "item"), text(body, "to")),
-                                  confirmed=body.get("confirmed") is True)
+                                  confirmed=body.get("confirmed") is True, event_id=body.get("id"))
     e = outcome.event
     return reply(outcome, e and (f"✓ {e.item} · {before.items.get(e.item, '')} · "
                                  f"was in {location_of(before, e.item) or '—'} → {e.dst}"))
 
 
 def api_undo(ctx: service.Context, body: dict) -> dict:
-    outcome = service.submit_undo(ctx)
+    outcome = service.submit_undo(ctx, event_id=body.get("id"))
     return reply(outcome, "Undone. " + " ".join(outcome.verdict.messages))
 
 
 def api_resolve(ctx: service.Context, body: dict) -> dict:
-    outcome = service.submit_resolve(ctx, text(body, "item"), text(body, "to"))
+    outcome = service.submit_resolve(ctx, text(body, "item"), text(body, "to"),
+                                     event_id=body.get("id"))
     e = outcome.event
     return reply(outcome, e and f"⚠ settled: {e.item} is in {e.dst}")
 
@@ -133,7 +174,7 @@ def api_resolve(ctx: service.Context, body: dict) -> dict:
 def api_label(ctx: service.Context, body: dict) -> dict:
     before = service.current_state(ctx)
     outcome = service.submit_label(ctx, text(body, "build"), text(body, "label"),
-                                   text(body, "reason", required=False))
+                                   text(body, "reason", required=False), body.get("id"))
     e = outcome.event
     return reply(outcome, e and (f"SEC {e.item} · {location_of(before, e.item) or '—'} · "
                                  f"was {before.labels.get(e.item, '—')} → {e.dst}"))
@@ -151,7 +192,7 @@ def api_add(ctx: service.Context, body: dict) -> dict:
     if body.get("container") is True:
         store.set_container(ctx.ledger_dir, prefix.upper(), True)
     written = service.add_items(ctx, plan_more(Group(prefix.upper(), name, count, at),
-                                               service.current_state(ctx)))
+                                               service.current_state(ctx)), body.get("id"))
     ids = f"{written[0].item}" + (f"..{written[-1].item}" if len(written) > 1 else "")
     outcome = service.Outcome(Verdict(Kind.ACCEPT), written[-1])
     return reply(outcome, f"✓ {len(written)} added: {ids} · {name} · at {at}")
@@ -168,23 +209,91 @@ def api_people(hub: Hub, body: dict) -> dict:
             "name": name, "people": store.read_people(hub.ledger_dir)}
 
 
-def write(hub: Hub, command: str, body: dict) -> dict:
-    """Run one write as the person and device the request names. A fresh cache connection
-    per write: the server is threaded, and syncing first picks up `fl` and `git pull`."""
-    if command == "people":
-        return api_people(hub, body)
-    actor, device = text(body, "actor", limit=40), text(body, "device", limit=64)
-    if not DEVICE.match(device):
-        raise BadRequest("'device' must be letters, digits and dashes.")
+def person(hub: Hub, body: dict) -> str:
+    actor = text(body, "actor", limit=40)
     if actor not in store.read_people(hub.ledger_dir):
         raise BadRequest(f"'{actor}' isn't in the People list. Pick your name first.")
+    return actor
+
+
+def run(hub: Hub, command: str, body: dict) -> dict:
+    """Run one write as the person, device, time and seq the request names. A fresh cache
+    connection per write: the server is threaded, and syncing first picks up `fl` and
+    `git pull`."""
+    actor, device = person(hub, body), text(body, "device", limit=64)
+    if not DEVICE.match(device):
+        raise BadRequest("'device' must be letters, digits and dashes.")
+    occurred_at, seq = phone_time(body), phone_seq(body)
     conn = store.connect(hub.db)
     try:
         store.sync(conn, hub.ledger_dir)
-        return WRITES[command](service.Context(conn, actor, device, hub.now, hub.ledger_dir),
-                               body)
+        return WRITES[command](service.Context(conn, actor, device, hub.now, hub.ledger_dir,
+                                               occurred_at=occurred_at, seq=seq), body)
     finally:
         conn.close()
+
+
+def write(hub: Hub, command: str, body: dict) -> dict:
+    """One request. An event id is logged once. A write that waited in a phone's queue and
+    can't be logged as it stands (refused, asked, or malformed) is held, not dropped."""
+    if command == "people":
+        return api_people(hub, body)
+    if command == "settle":
+        return api_settle(hub, body)
+    queued = body.get("queued") is True
+    event_id = phone_id(body, required=queued)
+    if event_id and store.event_file(hub.ledger_dir, event_id).exists():
+        return {"verdict": "IGNORE", "messages": ["Already logged."], "event": event_id,
+                "readback": ""}
+    if event_id and (entry := store.read_held(hub.ledger_dir, event_id)):
+        return held_reply(entry)
+    try:
+        answer = run(hub, command, body)
+    except BadRequest as error:
+        if not queued:
+            raise
+        answer = {"verdict": "REJECT", "messages": [str(error)], "event": None, "readback": ""}
+    if queued and answer["verdict"] in ("REJECT", "CONFIRM"):
+        return hold(hub, command, body, answer)
+    return answer
+
+
+# --- needs a look ------------------------------------------------------------------------
+
+def held_reply(entry: dict) -> dict:
+    return {"verdict": entry["verdict"], "messages": entry["messages"], "event": None,
+            "readback": "", "held": True}
+
+
+def hold(hub: Hub, command: str, body: dict, answer: dict) -> dict:
+    entry = {"id": body["id"], "command": command,
+             "body": {k: v for k, v in body.items() if k not in ("queued", "confirmed")},
+             "verdict": answer["verdict"], "messages": answer["messages"],
+             "recorded_at": hub.now().isoformat(), "settled": None}
+    store.write_held(hub.ledger_dir, entry, f"needs a look: {command} {body['id'][:8]}")
+    return held_reply(entry)
+
+
+def api_settle(hub: Hub, body: dict) -> dict:
+    """Anyone settles a held arrival, and their name goes on it. "log" writes it as its phone
+    sent it (same person, time and seq), answering yes to any question; every other rule
+    still applies, so a refusal stays on the list with its reason. "dismiss" logs nothing."""
+    settler, how = person(hub, body), body.get("how")
+    if how not in ("log", "dismiss"):
+        raise BadRequest("'how' must be 'log' or 'dismiss'.")
+    entry = store.read_held(hub.ledger_dir, phone_id(body, required=True))
+    if entry is None or entry["settled"]:
+        raise BadRequest("Nothing is waiting under that id.")
+    if how == "log":
+        answer = run(hub, entry["command"], {**entry["body"], "confirmed": True})
+        if not answer["event"]:
+            return answer
+    else:
+        answer = {"verdict": "ACCEPT", "messages": [], "event": None, "readback": "Dismissed."}
+    done = "logged" if how == "log" else "dismissed"
+    entry["settled"] = {"by": settler, "at": hub.now().isoformat(), "how": done}
+    store.write_held(hub.ledger_dir, entry, f"needs a look: {done} {entry['id'][:8]} by {settler}")
+    return answer
 
 
 # --- HTTP -----------------------------------------------------------------------------
@@ -210,7 +319,7 @@ class Board(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         command = self.path.split("?", 1)[0].removeprefix("/api/")
-        if command not in WRITES and command != "people":
+        if command not in WRITES and command not in ("people", "settle"):
             return self.send(HTTPStatus.NOT_FOUND, "text/plain", b"not found")
         try:
             length = int(self.headers.get("Content-Length") or 0)

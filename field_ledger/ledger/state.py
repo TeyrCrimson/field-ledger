@@ -15,7 +15,7 @@ whichever it was given, and anything not an item is treated as the top of the ch
 """
 
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from .model import Event
 
@@ -36,12 +36,18 @@ class State:
     events: list[Event] = field(default_factory=list)          # live (non-voided) events, in order
 
 
+def clock(event: Event) -> datetime:
+    """When an event counts as having happened. Nothing happens after the hub received it,
+    so a phone whose clock runs fast can't beat moves logged after its event arrived."""
+    return min(event.ts, event.recorded_at) if event.recorded_at else event.ts
+
+
 def ordered(events: list[Event]) -> list[Event]:
     """Oldest first. A device's clock can jump back but its seq counter can't, so each
     event's effective time is never earlier than its device's previous event."""
     effective, last = {}, {}
     for e in sorted(events, key=lambda e: (e.device, e.seq)):
-        last[e.device] = effective[e.id] = max(e.ts, last.get(e.device, e.ts))
+        last[e.device] = effective[e.id] = max(clock(e), last.get(e.device, clock(e)))
     return sorted(events, key=lambda e: (effective[e.id], e.device, e.seq))
 
 

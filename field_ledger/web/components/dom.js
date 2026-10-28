@@ -13,6 +13,17 @@ export function button(text, className = "", onClick = null) {
   return node;
 }
 
+// One line for a write that hasn't been logged yet (waiting, or needing a look).
+export function describeWrite(command, body) {
+  switch (command) {
+    case "move": return `${body.item} → ${body.to}`;
+    case "add": return `+${body.count} ${String(body.prefix).toUpperCase()} at ${body.at}`;
+    case "label": return `${body.build}: label ${String(body.label).toUpperCase()}`;
+    case "resolve": return `${body.item} is in ${body.to}`;
+    default: return command;
+  }
+}
+
 // Shared look for every dialog, so each dialog component only styles its own inside.
 export const dialogCss = `
 dialog {

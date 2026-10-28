@@ -385,8 +385,8 @@ branch-gone: 1 (confirm with fl where, update with fl move <build> <location>) Â
 | Label | Branch | Age (d) | Author | PR | Location | Build | SEC |
 |---|---|---|---|---|---|---|---|
 | branch-gone | `feat/old-site` | - | - | - | site-a | da94d1f | LOW |
+| no-PR | `feat/build-6` | 0 | TeyrCrimson | - | site-b | 231ce51 |  |
 | no-PR | `feat/build-7` | 0 | TeyrCrimson | - | drone-3 | 3c533aa | HIGH |
-| no-PR | `feat/build-6` | 0 | TeyrCrimson | - | site-b | 231ce51 (moved on) |  |
 ```
 
 It runs `git fetch --prune` first (`--no-fetch` skips it and works offline). Use a full clone:

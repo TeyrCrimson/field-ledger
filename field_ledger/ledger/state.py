@@ -150,6 +150,13 @@ def conflicts(state: State, device_window: timedelta,
     return result
 
 
+def deployed_sha(state: State, build: str) -> str:
+    """The commit on the build's latest live move ('' if unknown). A RESOLVE only
+    confirms a place, so it never stands in for a deploy."""
+    return next((e.sha for e in reversed(state.events)
+                 if e.kind == "MOVE" and e.item == build), "")
+
+
 def placed_by(move: Event, node: str) -> str:
     """Where `move` puts `node`: its destination, or (moving a container) still inside it."""
     return move.dst if move.item == node else move.item

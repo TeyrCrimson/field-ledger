@@ -14,6 +14,7 @@ Usage:
 import argparse
 import os
 import sys
+from dataclasses import replace
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,8 +24,8 @@ from .git_source import is_merged, last_commit, list_branches, run_git
 from .ledger import service, store
 from .ledger.cli import Ask, ask_tty, open_ledger, render_event, render_verdict, report
 from .ledger.model import Event, Kind
-from .ledger.state import fold, location_of
-from .model import Label
+from .ledger.state import State, deployed_sha, fold, location_of
+from .model import Branch, Label, Row
 from .pr_source import fetch_prs
 from .render import render_show, render_table
 
@@ -39,6 +40,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="where to look up open PRs/MRs")
     p.add_argument("--no-fetch", action="store_true", help="skip `git fetch --prune` first")
     p.add_argument("--hide-in-flight", action="store_true", help="only show problems")
+    p.add_argument("--ledger-dir", type=Path,
+                   default=Path(os.environ.get("FL_LEDGER_DIR", store.DEFAULT_LEDGER_DIR)),
+                   help="adds Location, Build and SEC columns when a ledger is there")
     return p.parse_args(argv)
 
 
@@ -68,6 +72,49 @@ def do_init(argv: list[str]) -> None:
     args = p.parse_args(argv)
     created = store.init_ledger(args.ledger_dir)
     print(f"OK\n  ledger: {args.ledger_dir}  ({'created' if created else 'already there'})")
+
+
+def ledger_cells(state: State, open_: dict[str, tuple[str, str]], name: str, head: str) -> dict:
+    """The board's three ledger columns for one build: where it is (with a ⚠ and the other
+    place), the commit deployed there (and whether the branch has moved on), its label."""
+    if name not in state.where:
+        return {"sec": state.labels.get(name, "")}
+    sha = deployed_sha(state, name)
+    build = sha[:7] if sha else "unknown"
+    if sha and head and head != sha:
+        build += " (moved on)"
+    location = location_of(state, name)
+    if name in open_:
+        location += f" ⚠ {open_[name][1]}"
+    return {"location": location, "build": build, "sec": state.labels.get(name, "")}
+
+
+def with_ledger(rows: list[Row], args: argparse.Namespace, now: datetime) -> list[Row] | None:
+    """The 10-30 board: the stale-work rows plus what the ledger knows about each build.
+
+    Builds the ledger has deployed whose branch is gone (merged and deleted) get a row of
+    their own, `branch-gone`, so someone confirms where they really are. Read-only: the
+    event files are read directly, no cache, nothing written. None when there's no ledger.
+    """
+    if not store.events_dir(args.ledger_dir).exists():
+        return None
+    state = fold(store.read_events(args.ledger_dir))
+    open_ = service.open_conflicts(state)
+    listed = {r.branch.name for r in rows} | {args.base.removeprefix(f"{args.remote}/")}
+    # ponytail: the base branch is never a row, so a deployed base (e.g. main) isn't shown
+    gone = [Row(Branch(name, now, "-"), None, Label.BRANCH_GONE, None)   # nothing to date
+            for name, kind in sorted(state.items.items())
+            if kind == "build" and name not in listed
+            and last_commit(args.repo, name, args.remote) is None]
+    out = []
+    for row in rows + gone:
+        name = row.branch.name
+        if name not in state.items:
+            out.append(row)
+            continue
+        head = last_commit(args.repo, name, args.remote)
+        out.append(replace(row, **ledger_cells(state, open_, name, head.sha if head else "")))
+    return sort_rows(out)
 
 
 def ledger_args(p: argparse.ArgumentParser) -> None:
@@ -101,7 +148,7 @@ def ledger_lines(ledger_dir: Path, branch: str, head: str) -> list[str]:
         return []
     lines = []
     if branch in state.where:
-        sha = state.last_event[branch].sha
+        sha = deployed_sha(state, branch)
         lines.append(f"at {location_of(state, branch)}, "
                      + (f"deployed as {sha[:7]}" if sha else "commit unknown"))
         if sha and head != sha:
@@ -216,4 +263,6 @@ def main(argv: list[str] | None = None, ask: Ask = ask_tty,
     if argv and argv[0] == "undo":
         return do_undo(argv[1:], now)
     args = parse_args(argv)
-    print(render_table(collect(args, now())))
+    rows = collect(args, now())
+    board = with_ledger(rows, args, now())
+    print(render_table(rows) if board is None else render_table(board, ledger=True))

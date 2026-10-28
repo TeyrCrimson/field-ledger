@@ -184,7 +184,12 @@ Every event records:
 No logins and no PINs. The threat model is honest mistakes. On first open, a phone picks its
 person from the ledger's **People** list.
 
-Status: **v0** records the logging person and the import time only. The rest is **planned**.
+Status: **v0** records `logged_by`, `device`, `occurred_at` and `recorded_at`. A board write
+carries the phone's own time; `fl` stamps both with the laptop's. An event whose `occurred_at`
+is more than 5 minutes after its `recorded_at` is flagged `future` (`fl flags`), and replay
+counts every event at the earlier of the two, so a phone whose clock runs fast can't beat moves
+logged after its event arrived. `moved_by` and `actor_source` are **planned**, and an imported
+line is still attributed to the importer and timed at import.
 
 ---
 
@@ -230,8 +235,8 @@ hand over, except that anyone may claim ownership once a nudge has gone unanswer
 | Piece | What it is |
 |---|---|
 | **Network** | A travel router (preferred) or a phone hotspot. Laptops join as normal clients. Don't use a laptop hotspot |
-| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation). **v0**: serves the board and takes its writes (see "The hub" below); offline phones are **planned** |
-| **Phones** | Open the board in a browser and add it to the home screen. Moves queue on the phone if the hub is unreachable and send when it's back |
+| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation). **v0**: serves the board and takes its writes, including ones that waited on a phone (see "The hub" below) |
+| **Phones** | Open the board in a browser and add it to the home screen. Moves queue on the phone if the hub is unreachable and send when it's back. **v0**: while the board is open (see "Phones offline") |
 | **Relay** | When phones can't reach the hub (company or public Wi-Fi, or no hub on site), moves go through the Telegram bot. The hub fetches them over outbound HTTPS. The bot carries moves; it is never the record |
 | **Backup** | The hub pushes the ledger repo when it has internet |
 
@@ -259,6 +264,28 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
 
 `fl people` lists the names; `fl people add <name>` adds one; `fl init` adds its own.
 
+**Phones offline.** Each write gets its event id, its time (`occurred_at`) and the phone's own
+sequence number when it's tapped. If the hub can't be reached, a move, add, label or resolve
+waits on the phone, the header shows **N unsynced**, and the write goes out by itself, oldest
+first, when the hub is back: on reconnecting, on each 10-second refresh, and after each write.
+The hub logs an event id once, so a resend is harmless ("already logged"). Undo and "I'm new"
+need the hub.
+
+A waiting write that the hub would refuse or ask about when it arrives is neither logged nor
+dropped. It goes on **Needs a look** at the top of the board, for anyone to settle:
+
+- **Log it anyway** (a question) or **Try again** (a refusal) writes it as its phone sent it:
+  same person, time and sequence. Every rule still applies, so a refusal stays on the list.
+- **Dismiss** logs nothing.
+
+Each one is a file in the ledger repo, `needs-a-look/<event-id>.json`, committed when it
+arrives. Settling writes who settled it, when, and how into the file, and the file stays.
+
+**The plain http limit.** Waiting writes live in the browser's storage, so they survive closing
+the tab, but clearing the browser's data loses them. The board itself only opens while the hub
+is reachable. Opening it offline needs a service worker, and browsers allow those only on HTTPS
+(or localhost), so keep the board open in the field. An HTTPS hub is **planned**.
+
 **Which kinds hold things.** Only a container kind can have things packed into its items: a case,
 a van, a drone a build is deployed onto. A kind holds nothing until someone says so, in the kit
 file's `container` column (`yes`/`no`), with `fl add CAS 2 --at truck --container`,
@@ -266,11 +293,15 @@ file's `container` column (`yes`/`no`), with `fl add CAS 2 --at truck --containe
 builds never do. `fl move BAT-01 BAT-02` is refused: `BAT-02 can't hold things`.
 
 **What it serves.** `GET /state.json` is the replayed state: every node with its place, container
-chain and last event; a build's commit and label; any ⚠ with both places; the People list.
+chain and last event; a build's commit and label; any ⚠ with both places; the People list;
+`needs_look`, the held writes nobody has settled.
 `POST /api/move | undo | resolve | label | add` takes JSON naming the person (`actor`, from the
 People list) and the browser (`device`), runs the same service functions as `fl`, and answers
 `{verdict, messages, event, readback}`. A refusal is a verdict, not an error; a malformed request
-is a 400. `POST /api/people {name}` adds a name. Writes run one at a time: the hub is the only
+is a 400. A phone adds `id` (a lowercase UUID, logged once), `occurred_at` (ISO, with a zone) and
+`seq`, plus `queued: true` on a write that waited: the hub holds that one instead of refusing or
+asking (`{..., held: true}`). `POST /api/settle {id, how: log | dismiss}` settles a held write.
+`POST /api/people {name}` adds a name. Writes run one at a time: the hub is the only
 committer. `GET /` is the board from `field_ledger/web/`: plain files, no build step.
 `tokens.css` holds colours, spacing and type; each file in `components/` carries its own markup
 and style; `board.js` wires them up and `api.js` does the writes. A design pass swaps the files;
@@ -522,7 +553,7 @@ Never commit them. Copying the token file is part of takeover.
 | `ledger/validate.py` | Accept/reject rules | yes |
 | `ledger/kit.py` | Kit file, numbering | yes |
 | `ledger/importer.py` | Finding commands in text | yes |
-| `ledger/store.py` | Event files (the record), SQLite cache, merge | no |
+| `ledger/store.py` | Event files (the record), SQLite cache, merge, Needs a look files | no |
 | `ledger/service.py` | Validate, then write | no |
 | `ledger/cli.py` | `fl` command; opening a ledger, shared with code mode | no |
 | `cli.py` | `field-ledger` command: board, `show`, `deploy`, `label`, `undo`, `serve` | no |

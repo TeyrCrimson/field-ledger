@@ -6,25 +6,30 @@
 // van: its kind says so) to pack it inside. Tapping any other card picks that one instead.
 // On a laptop, drag it there. Every write goes through api.js to the hub, which answers with
 // the same rules as `fl`: refused, asked (a confirm), or logged (a readback with Undo).
-import { me, post, setName } from "./api.js";
+// With no hub a write waits on the phone ("N unsynced") and goes out when the hub is back:
+// on reconnect, on each refresh, after each write. One the hub won't log as it arrives lands
+// on Needs a look for a person to settle.
+import { CAN_WAIT, flush, me, post, send, setName, unsynced } from "./api.js";
 import { actionBar, css as actionCss } from "./components/actionbar.js";
 import { addDialog, css as addCss } from "./components/add-form.js";
 import { column, css as columnCss } from "./components/column.js";
 import { confirmDialog, css as confirmCss } from "./components/confirm.js";
-import { button, dialogCss } from "./components/dom.js";
+import { button, describeWrite, dialogCss } from "./components/dom.js";
 import { itemCard, css as cardCss } from "./components/item-card.js";
+import { needsLook, css as needsCss } from "./components/needs-look.js";
 import { peoplePicker, css as peopleCss } from "./components/people.js";
 import { toast, css as toastCss } from "./components/toast.js";
+import { unsyncedBadge, css as unsyncedCss } from "./components/unsynced.js";
 
 const REFRESH_MS = 10_000;
 const TOAST_MS = 15_000;
 
 const style = document.createElement("style");
 style.textContent = [dialogCss, columnCss, cardCss, actionCss, addCss, confirmCss, peopleCss,
-                     toastCss].join("\n");
+                     toastCss, needsCss, unsyncedCss].join("\n");
 document.head.append(style);
 
-let latest = { places: [], nodes: [], people: [] };
+let latest = { places: [], nodes: [], people: [], needs_look: [] };
 let selected = null;                                    // the picked node's id
 
 const $ = (id) => document.getElementById(id);
@@ -42,28 +47,46 @@ function say(text, options = {}) {
   setTimeout(() => node.remove(), TOAST_MS);
 }
 
-// One write, end to end: refused → why; asked → confirm, then again with confirmed;
-// logged → the readback, with Undo.
+// One write, end to end: no hub → it waits; refused → why; asked → confirm, then again
+// with confirmed (same id and time); logged → the readback, with Undo.
 async function act(command, body = {}) {
   let answer;
   try {
-    answer = await post(command, body);
+    answer = await send(command, body);
   } catch (error) {
     return say(`Not logged: ${error.message}`, { error: true });
   }
+  if (answer.queued) {
+    say(`Waiting for the hub: ${describeWrite(command, answer.body)}. It goes when the hub is back.`);
+    select(null);
+    return renderHeader();
+  }
   if (answer.verdict === "CONFIRM") {
-    return showDialog(confirmDialog(answer.messages, () => act(command, { ...body, confirmed: true })));
+    return showDialog(confirmDialog(answer.messages,
+                                    () => act(command, { ...answer.body, confirmed: true })));
   }
   if (answer.verdict === "REJECT" || answer.verdict === "IGNORE") {
     say(answer.messages.join(" ") || "Not logged.", { error: true });
   } else {
     say(answer.readback, {
       messages: answer.verdict === "WARN" ? answer.messages : [],
-      onUndo: command === "undo" ? null : () => act("undo"),
+      onUndo: CAN_WAIT.has(command) ? () => act("undo") : null,
     });
   }
   select(null);
   await refresh();
+}
+
+// What happened to a write that waited. Already logged (a resend) needs no word.
+function arrived(command, body, answer) {
+  const what = describeWrite(command, body);
+  if (answer.held) {
+    say(`Needs a look: ${what}. ${answer.messages.join(" ")}`, { error: true });
+  } else if (answer.event && answer.readback) {
+    say(`Sent: ${answer.readback}`);
+  } else if (!answer.event) {
+    say(`Not logged: ${what}. ${answer.messages.join(" ")}`, { error: true });
+  }
 }
 
 function moveTo(target) {
@@ -111,6 +134,10 @@ function render() {
     return section;
   });
   $("board").replaceChildren(...columns);
+  $("needs-look").replaceChildren(...(latest.needs_look.length ? [needsLook(latest.needs_look, {
+    onLog: (entry) => act("settle", { id: entry.id, how: "log" }),
+    onDismiss: (entry) => act("settle", { id: entry.id, how: "dismiss" }),
+  })] : []));
   select(nodeById(selected) ? selected : null);
 }
 
@@ -169,22 +196,28 @@ function pickName(required) {
 
 function renderHeader() {
   $("actions").replaceChildren(
+    ...(unsynced() ? [unsyncedBadge(unsynced())] : []),
     button(me.name ? `You: ${me.name}` : "Who are you?", "", () => pickName(false)),
     button("+ Add items", "", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))),
     button("Undo my last", "", () => act("undo")),
   );
 }
 
+// The hub answered, so anything waiting goes now; if some did, read the board again.
 async function refresh() {
   try {
-    const response = await fetch("state.json", { cache: "no-store" });
+    const response = await fetch("state.json", { cache: "no-store", signal: AbortSignal.timeout(8_000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     latest = await response.json();
     render();
     $("status").textContent = `Updated ${new Date().toLocaleTimeString()}`;
   } catch (error) {
     $("status").textContent = `Can't reach the hub (${error.message}). Showing the last board.`;
+    return renderHeader();
   }
+  const sent = await flush(arrived);
+  renderHeader();
+  if (sent) await refresh();
 }
 
 wireBoard();
@@ -192,3 +225,4 @@ renderHeader();
 await refresh();
 if (!me.name || !latest.people.includes(me.name)) pickName(true);
 setInterval(refresh, REFRESH_MS);
+window.addEventListener("online", refresh);

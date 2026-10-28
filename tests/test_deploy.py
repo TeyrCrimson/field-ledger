@@ -210,6 +210,17 @@ def test_undo_takes_back_a_whole_import(tmp_path):
     assert location_of(state, "BAT-01") == location_of(state, "BAT-02") == "truck"
 
 
+def test_a_missing_build_is_not_called_kit(repo, tmp_path, capsys):
+    """A build only exists from its first deploy; after undoing that, `where` says so."""
+    assert deploy(tmp_path, repo, "pending", "drn-03") == 0
+    assert main(["undo", "--ledger-dir", str(tmp_path / "ledger"),
+                 "--db", str(tmp_path / "l.db")], now=Clock()) == 0
+    capsys.readouterr()
+    assert ledger(tmp_path, "where", "pending") == 1
+    assert "'pending' is not in the ledger." in capsys.readouterr().out
+    assert ledger(tmp_path, "where", "BAT-99") == 1                 # an ID: still a kit typo
+    assert "BAT-99 is not in the kit." in capsys.readouterr().out
+
 def test_undo_is_refused_after_the_window(repo, tmp_path, capsys):
     clock = Clock()
     assert deploy(tmp_path, repo, "pending", "drn-03", clock=clock) == 0

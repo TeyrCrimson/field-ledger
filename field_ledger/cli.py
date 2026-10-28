@@ -6,6 +6,7 @@ Usage:
     python -m field_ledger deploy feat/x site-b --repo ~/github-repos/casio-edge
     python -m field_ledger label feat/x CRIT exposes the CDR port
     python -m field_ledger undo
+    python -m field_ledger serve --lan
     python -m field_ledger --repo ~/github-repos/casio-edge --base origin/develop --prs gh
 
 `deploy` and `undo` write to the same ledger as `fl`, through the same service layer.
@@ -19,6 +20,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import hub
 from .classify import build_row, days_between, sort_rows
 from .git_source import is_merged, last_commit, list_branches, run_git
 from .ledger import service, store
@@ -244,6 +246,42 @@ def do_label(argv: list[str], now: Callable[[], datetime]) -> int:
     return 0
 
 
+def do_serve(argv: list[str]) -> int:
+    """`field-ledger serve`: the hub. Read-only for now (field stage 1)."""
+    p = argparse.ArgumentParser(prog="field-ledger serve",
+                                description="Serve the board to this laptop, or with --lan to "
+                                            "phones on the field network.")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--lan", action="store_true",
+                   help="listen on every interface, not just this laptop (no logins: opt in)")
+    p.add_argument("--web-dir", type=Path, default=hub.WEB_DIR,
+                   help="serve another front end, e.g. a design to try")
+    p.add_argument("--ledger-dir", type=Path,
+                   default=Path(os.environ.get("FL_LEDGER_DIR", store.DEFAULT_LEDGER_DIR)))
+    args = p.parse_args(argv)
+    if not store.events_dir(args.ledger_dir).exists():
+        print(f"REJECT\n  No ledger at {args.ledger_dir}. Run `fl init <your-name>` first.")
+        return 1
+    server = hub.make_server(args.ledger_dir, args.web_dir,
+                             "0.0.0.0" if args.lan else "127.0.0.1", args.port)
+    port = server.server_address[1]
+    print(f"Board: http://127.0.0.1:{port}/")
+    if args.lan:
+        address = hub.lan_address()
+        print(f"Phones: http://{address}:{port}/")
+        if hub.behind_wsl_nat(address):
+            print("  WSL2 is in NAT mode: phones can't reach this address. "
+                  "See README, \"The hub\", for the one-time setup.")
+    print("Read-only. Ctrl-C stops it.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
 def do_undo(argv: list[str], now: Callable[[], datetime]) -> int:
     """`field-ledger undo`: take back your own last command, inside the undo window."""
     p = argparse.ArgumentParser(prog="field-ledger undo",
@@ -266,6 +304,8 @@ def main(argv: list[str] | None = None, ask: Ask = ask_tty,
         return do_deploy(argv[1:], now, ask)
     if argv and argv[0] == "label":
         return do_label(argv[1:], now)
+    if argv and argv[0] == "serve":
+        return do_serve(argv[1:])
     if argv and argv[0] == "undo":
         return do_undo(argv[1:], now)
     args = parse_args(argv)

@@ -19,7 +19,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .classify import build_row, sort_rows
+from .classify import build_row, days_between, sort_rows
 from .git_source import is_merged, last_commit, list_branches, run_git
 from .ledger import service, store
 from .ledger.cli import Ask, ask_tty, open_ledger, render_event, render_verdict, report
@@ -93,21 +93,27 @@ def with_ledger(rows: list[Row], args: argparse.Namespace, now: datetime) -> lis
     """The 10-30 board: the stale-work rows plus what the ledger knows about each build.
 
     Builds the ledger has deployed whose branch is gone (merged and deleted) get a row of
-    their own, `branch-gone`, so someone confirms where they really are. Read-only: the
+    their own, `branch-gone`, so someone confirms where they really are. A deployed base
+    branch (a site running main) gets a `base` row: the stale-work table never lists the
+    base, but the board is about what's deployed where. Read-only: the
     event files are read directly, no cache, nothing written. None when there's no ledger.
     """
     if not store.events_dir(args.ledger_dir).exists():
         return None
     state = fold(store.read_events(args.ledger_dir))
     open_ = service.open_conflicts(state)
-    listed = {r.branch.name for r in rows} | {args.base.removeprefix(f"{args.remote}/")}
-    # ponytail: the base branch is never a row, so a deployed base (e.g. main) isn't shown
+    base_name = args.base.removeprefix(f"{args.remote}/")
+    listed = {r.branch.name for r in rows} | {base_name}
+    base_head = last_commit(args.repo, base_name, args.remote)
+    base = ([Row(Branch(base_name, base_head.when, base_head.author), None, Label.BASE,
+                 days_between(base_head.when, now))]
+            if state.items.get(base_name) == "build" and base_head else [])
     gone = [Row(Branch(name, now, "-"), None, Label.BRANCH_GONE, None)   # nothing to date
             for name, kind in sorted(state.items.items())
             if kind == "build" and name not in listed
             and last_commit(args.repo, name, args.remote) is None]
     out = []
-    for row in rows + gone:
+    for row in rows + gone + base:
         name = row.branch.name
         if name not in state.items:
             out.append(row)

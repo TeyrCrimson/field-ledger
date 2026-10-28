@@ -101,3 +101,18 @@ def test_the_board_writes_nothing(repo, tmp_path, capsys):
     before = snapshot()
     board(tmp_path, repo, "--no-fetch")
     assert snapshot() == before
+
+
+def test_a_deployed_base_branch_gets_a_base_row(repo, tmp_path, capsys):
+    """A site running main: the row says main, Build says which main."""
+    deployed = sha_of(repo, "origin/main")
+    assert deploy(tmp_path, repo, "main", "drone-3") == 0
+    git(repo, "checkout", "main")
+    commit(repo, "the next merge")
+    git(repo, "push", "origin", "main")
+    capsys.readouterr()
+    board(tmp_path, repo, "--no-fetch")
+    out = capsys.readouterr().out
+    assert row(out, "main").startswith("| base | `main` | 0 |")
+    assert row(out, "main").endswith(f"| drone-3 | {deployed} (moved on) |  |")
+    assert out.splitlines()[-1] == row(out, "main")                 # not a problem: last

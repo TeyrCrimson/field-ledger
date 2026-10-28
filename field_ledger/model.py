@@ -13,6 +13,7 @@ class Label(str, Enum):
     PR_STALE = "PR-stale"                      # checked out, known, not moving
     IN_FLIGHT = "in-flight"                    # checked out, known, moving
     BRANCH_GONE = "branch-gone"                # deployed per the ledger, but its branch is gone
+    BASE = "base"                              # the base branch itself, deployed somewhere
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,8 @@ from datetime import datetime
 
 from .model import Branch, Label, PullRequest, Row
 
-ORDER = [Label.BRANCH_GONE, Label.NO_PR, Label.PR_STALE, Label.MERGED_NOT_DELETED, Label.IN_FLIGHT]
+ORDER = [Label.BRANCH_GONE, Label.NO_PR, Label.PR_STALE, Label.MERGED_NOT_DELETED, Label.IN_FLIGHT,
+         Label.BASE]
 
 
 def days_between(earlier: datetime, later: datetime) -> int:

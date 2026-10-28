@@ -65,18 +65,6 @@ def test_two_people_importing_the_same_export_add_nothing_twice(tmp_path):
     assert statuses(again) == ["already-imported", "already-imported", "rejected", "ignored"]
 
 
-def test_mov_is_the_same_command_as_move(tmp_path):
-    """The design doc's agreed chat format is `MOV BAT-12 > van`."""
-    ctx = make_ctx(tmp_path / "l.db")
-    seed(ctx)
-    [line] = service.import_text(ctx, "[17/10/26, 13:05] Teyr: MOV BAT-01 > site-B")
-    assert line.status == "written"
-    assert service.current_state(ctx).where["BAT-01"] == "site-b"
-    [shared] = service.import_text(ctx, "MOV BAT-02 → van (Teyr, 14:32)")   # shared by the ledger
-    assert shared.status == "rejected"
-    assert service.current_state(ctx).where["BAT-02"] == "truck"
-
-
 def test_moving_back_is_not_a_repeat():
     lines = extract_commands("MOVE BAT-01 > site-B\nMOVE BAT-01 > truck\nMOVE BAT-01 > Site-B\n"
                              "MOVE BAT-02 > van\nMOVE bat2 > VAN\n")

@@ -16,7 +16,7 @@ from .kit import Group, plan_kit, plan_more, read_kit
 from .model import At, Event, Kind, Move, Rename, Verdict, Void, Where
 from .parse import ParseError, parse
 from .state import ancestors, items_at
-from .validate import canonical_destination
+from .validate import canonical_destination, node_id
 
 TAG = {Kind.ACCEPT: "OK", Kind.WARN: "WARN", Kind.CONFIRM: "CONFIRM",
        Kind.REJECT: "REJECT", Kind.IGNORE: "IGNORED"}
@@ -27,9 +27,9 @@ Ask = Callable[[str], bool]
 
 def describe(e: Event) -> str:
     if e.kind == "MOVE":
-        return f"{e.item}  {e.src or '?'} > {e.dst}"
+        return f"{e.item}  {e.src or '?'} > {e.dst}" + (f"  @{e.sha[:7]}" if e.sha else "")
     if e.kind == "ADD":
-        return f"{e.item}  added at {e.dst} ({e.note})"
+        return f"{e.item}  added at {e.dst} ({e.note})" if e.dst else f"{e.item}  added ({e.note})"
     if e.kind == "VOID":
         return f"void {e.ref[:8]}: {e.note}"
     return f"location '{e.src}' renamed to '{e.dst}'"
@@ -80,11 +80,14 @@ def do_move(ctx: service.Context, cmd: Move, yes: bool, ask: Ask) -> int:
 
 def do_where(ctx: service.Context, cmd: Where) -> int:
     state = service.current_state(ctx)
-    item = canonical_item(cmd.item)
-    if item not in state.items:
-        hint = suggest(item or cmd.item, set(state.items))
+    item = node_id(cmd.item, state)
+    if item is None:
+        hint = suggest(canonical_item(cmd.item) or cmd.item, set(state.items))
         print(f"REJECT\n  '{cmd.item}' is not in the kit." + (f" Did you mean {hint}?" if hint else ""))
         return 1
+    if item not in state.where:
+        print(f"{item}: nowhere yet")
+        return 0
     *inside, location = ancestors(state, item)
     held = f" (in {' in '.join(inside)})" if inside else ""
     print(f"{item}: {location}{held}\n  last: {render_event(state.last_event[item])}")
@@ -165,6 +168,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--yes", action="store_true")
     sub.add_parser("where").add_argument("item")
     sub.add_parser("at").add_argument("location", nargs="+")
+    sub.add_parser("undo", help="cancel your own last event, within 10 minutes")
     void = sub.add_parser("void", help="cancel an event (it stays in the log, marked void)")
     void.add_argument("id")
     void.add_argument("reason", nargs="+")
@@ -197,21 +201,32 @@ def to_command(args: argparse.Namespace):
     return None
 
 
+def open_ledger(ledger_dir: Path, db: Path, actor: str | None,
+                now: Callable[[], datetime], name: str | None = None) -> service.Context:
+    """Open a ledger that already exists, cache synced to the record.
+
+    Shared with `field-ledger` (code mode), so both commands write through the same
+    path. `name` is the one set by `init`; it is stored before the actor is read.
+    """
+    if not (ledger_dir / ".git").exists():
+        raise SystemExit(f"No ledger at {ledger_dir}. Run `fl init <your-name>` first, "
+                         "or pass --ledger-dir.")
+    conn = store.connect(db)
+    device = store.ensure_device(conn)
+    store.sync(conn, ledger_dir)
+    if name:
+        store.set_meta(conn, "actor", name)
+    actor = actor or store.get_meta(conn, "actor")
+    if not actor:
+        raise SystemExit("No name set. Run `fl init <your-name>` first, or pass --actor.")
+    return service.Context(conn, actor, device, now, ledger_dir)
+
+
 def make_context(args: argparse.Namespace, now: Callable[[], datetime]) -> service.Context:
     if args.command == "init":
         store.init_ledger(args.ledger_dir)
-    elif not (args.ledger_dir / ".git").exists():
-        raise SystemExit(f"No ledger at {args.ledger_dir}. Run `fl init <your-name>` first, "
-                         "or pass --ledger-dir.")
-    conn = store.connect(args.db)
-    device = store.ensure_device(conn)
-    store.sync(conn, args.ledger_dir)
-    if args.command == "init":
-        store.set_meta(conn, "actor", args.name)
-    actor = args.actor or store.get_meta(conn, "actor")
-    if not actor:
-        raise SystemExit("No name set. Run `fl init <your-name>` first, or pass --actor.")
-    return service.Context(conn, actor, device, now, args.ledger_dir)
+    return open_ledger(args.ledger_dir, args.db, args.actor, now,
+                       args.name if args.command == "init" else None)
 
 
 def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
@@ -235,6 +250,8 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
     if args.command == "rebuild":
         print(f"OK\n  cache rebuilt: {store.rebuild(ctx.conn, ctx.ledger_dir)} event(s).")
         return 0
+    if args.command == "undo":
+        return report(service.submit_undo(ctx))
     if args.command == "flags":
         return do_list(service.flagged_events(service.current_state(ctx)))
     if args.command == "log":

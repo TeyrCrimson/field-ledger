@@ -48,7 +48,8 @@ security labels from a scanner (set by hand for now).
   nudge has gone unanswered for `nudge_after`.
 - Event fields: id, type, item, to, logged_by, moved_by (defaults to logged_by), actor_source
   (device | telegram | import), device, occurred_at, recorded_at, time_source (device |
-  prompted | import), source (+ original text for imports).
+  prompted | import), source (+ original text for imports), sha (build deploys: head commit),
+  batch (shared by the events one command wrote; undo takes them back together).
 
 ## Behaviour rules
 
@@ -58,7 +59,9 @@ security labels from a scanner (set by hand for now).
   Same destination = duplicate, merged. One tap writes RESOLVE.
 - **Readback:** every move echoes ID, name, previous location and new location
   (`✓ BAT-12 · Blue 6S · was in Case A → van`).
-- **Undo:** VOID of your own last event, inside `undo_minutes` (default 10); refused after.
+- **Undo:** VOIDs every event of your own last command (they share a `batch`: a deploy, a kit,
+  a whole import), inside `undo_minutes` (default 10); refused after. A node the command
+  created that someone has used since is left alone.
 - **Derived state** (code mode): branch age and last commit from local Git, always, offline.
 
 ## Settings (defaults)

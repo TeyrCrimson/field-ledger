@@ -168,7 +168,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--yes", action="store_true")
     sub.add_parser("where").add_argument("item")
     sub.add_parser("at").add_argument("location", nargs="+")
-    sub.add_parser("undo", help="cancel your own last event, within 10 minutes")
+    sub.add_parser("undo", help="take back your own last command, within 10 minutes")
     setting = sub.add_parser("set", help="change a ledger setting, e.g. 'set build_home lab'")
     setting.add_argument("key", choices=sorted(store.DEFAULT_SETTINGS))
     setting.add_argument("value", nargs="+")

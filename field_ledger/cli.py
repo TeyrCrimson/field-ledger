@@ -163,9 +163,9 @@ def do_deploy(argv: list[str], now: Callable[[], datetime], ask: Ask) -> int:
 
 
 def do_undo(argv: list[str], now: Callable[[], datetime]) -> int:
-    """`field-ledger undo`: VOID your own last event, inside the undo window."""
+    """`field-ledger undo`: take back your own last command, inside the undo window."""
     p = argparse.ArgumentParser(prog="field-ledger undo",
-                                description="Cancel your own last event, within 10 minutes.")
+                                description="Take back your own last command, within 10 minutes.")
     ledger_args(p)
     args = p.parse_args(argv)
     return report(service.submit_undo(open_ledger(args.ledger_dir, args.db, args.actor, now)))

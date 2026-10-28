@@ -36,7 +36,7 @@ fl move CAS-01 van                   # ...and everything inside the case goes wi
 fl where BAT-07                      # BAT-07: van (in CAS-01)
 fl at site-b                         # everything there, including inside cases
 fl flags                             # everything that needs a second look
-fl undo                              # cancel your own last event, within 10 minutes
+fl undo                              # take back your own last command, within 10 minutes
 fl void <event-id> "wrong battery"   # correct a mistake (history is kept)
 ```
 
@@ -159,7 +159,7 @@ new *item* to create, not a new location.
 
 | Mistake | Fix | Status |
 |---|---|---|
-| Just logged the wrong move | **Undo** within 10 minutes (`undo_minutes`). Undo is a VOID of your own last event; after the window it is refused and asks for `void <id> <reason>` | v0 |
+| Just logged the wrong move | **Undo** within 10 minutes (`undo_minutes`). Undo takes back your own last command: every event it wrote (a deploy's new nodes and its move, a whole kit, a whole import) is voided together, except a node someone has used since. After the window it is refused and asks for `void <id> <reason>` | v0 |
 | Older wrong entry | `fl void <id> <reason>`. The event stays, marked void; the item goes back to where it was | v0 |
 | Location typo | `fl rename-location site-bb site-b`. Views show the new name; stored events keep what was typed | v0 |
 
@@ -266,7 +266,7 @@ readback says `commit unknown`. `field-ledger undo` takes it back within 10 minu
 
 Code comes from somewhere too: a build's first deploy starts at `build_home` (default `hq`,
 change it with `fl set build_home <location>`), so it reads `was in hq → drn-03`, and
-undoing that first deploy puts the build back at `hq`.
+undoing that first deploy takes all of it back: the build node and any location it created.
 
 Branch age, last commit and merge state come from **local Git** and work offline and airgapped.
 
@@ -296,7 +296,7 @@ sequenceDiagram
 
     You->>CLI: fl init teyr
     CLI->>Ledger: git init, events/, .gitignore
-    CLI-->>You: OK, device ccfd8d4f, name teyr
+    CLI-->>You: OK, device 0dec4055, name teyr
 
     You->>CLI: field-ledger show feat/build-4
     CLI->>Code: last commit, merged into origin/main?
@@ -318,8 +318,8 @@ sequenceDiagram
     CLI-->>You: feat/build-4: site-b
 
     You->>CLI: field-ledger undo (inside 10 minutes)
-    CLI->>Ledger: commit VOID of your last event, the MOVE to site-b
-    CLI-->>You: void 80cf3d96: undo
+    CLI->>Ledger: commit VOIDs of your last command: ADD site-b, MOVE drone-3 > site-b
+    CLI-->>You: Took back 2 events from one command.
 
     You->>CLI: fl where feat/build-4
     CLI-->>You: feat/build-4: drone-3

@@ -72,4 +72,5 @@ class Event:
     ref: str = ""             # VOID: target event id
     note: str = ""            # VOID: reason. ADD: group name.
     sha: str = ""             # MOVE of a build node: its head commit when it was deployed
+    batch: str = ""           # shared by the events one command wrote; undo takes them back together
     flags: tuple[str, ...] = field(default=())

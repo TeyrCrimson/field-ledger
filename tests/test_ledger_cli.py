@@ -62,7 +62,7 @@ def test_no_name_set_stops_with_message(tmp_path):
 
 def test_where_shows_the_container(tmp_path, capsys):
     db = setup(tmp_path)
-    fl(db, "add", "CAS", "1", "--at", "truck")
+    fl(db, "add", "CAS", "1", "--at", "truck", "--container")
     fl(db, "move", "BAT-01", "cas1")
     fl(db, "move", "CAS-01", "van")
     capsys.readouterr()

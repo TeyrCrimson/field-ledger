@@ -60,6 +60,7 @@ def test_deploy_to_a_missing_id(tmp_path):
 def test_items_and_plain_places_still_work(tmp_path):
     ctx = make_ctx(tmp_path / "l.db")
     seed(ctx)
+    store.set_container(ctx.ledger_dir, "CAM", True)
     assert service.submit_move(ctx, Move("BAT-01", "cam-01")).event is not None    # an item
     assert service.submit_move(ctx, Move("BAT-02", "drone-3")).event is not None   # a place
 

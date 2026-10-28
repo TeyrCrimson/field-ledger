@@ -23,6 +23,7 @@ class Group:
     name: str
     count: int
     location: str
+    container: bool | None = None    # None: leave the kind as it is
 
 
 @dataclass(frozen=True)
@@ -43,7 +44,11 @@ def parse_group(row: dict) -> Group:
     location = canonical_location(row.get("location") or "")
     if not location:
         raise ValueError(f"{prefix}: a starting location is required")
-    return Group(prefix.upper(), (row.get("name") or prefix).strip(), count, location)
+    flag = (row.get("container") or "").strip().lower()
+    if flag not in ("", "yes", "no"):
+        raise ValueError(f"{prefix}: container must be yes or no")
+    return Group(prefix.upper(), (row.get("name") or prefix).strip(), count, location,
+                 {"yes": True, "no": False}.get(flag))
 
 
 def read_kit(text: str) -> list[Group]:

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import service, store
-from .ids import canonical_location
+from .ids import canonical_location, is_prefix
 from .kit import Group, plan_kit, plan_more, read_kit
 from .model import At, Event, Kind, Move, Rename, Verdict, Void, Where
 from .parse import ParseError, parse
@@ -122,6 +122,9 @@ def execute(ctx: service.Context, cmd, yes: bool, ask: Ask) -> int:
 
 
 def do_kit(ctx: service.Context, groups: list[Group], planner) -> int:
+    for group in groups:
+        if group.container is not None:
+            store.set_container(ctx.ledger_dir, group.prefix, group.container)
     state = service.current_state(ctx)
     planned = [p for g in groups for p in planner(g, state)]
     written = service.add_items(ctx, planned)
@@ -165,6 +168,12 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("count", type=int)
     add.add_argument("--at", required=True, help="starting location")
     add.add_argument("--name", help="group name (defaults to the prefix)")
+    add.add_argument("--container", action="store_true",
+                     help="this kind can hold other things (a case, a van, a drone)")
+    kind = sub.add_parser("kind", help="whether a kind holds things: 'kind CAS container yes'")
+    kind.add_argument("prefix")
+    kind.add_argument("what", choices=["container"])
+    kind.add_argument("value", choices=["yes", "no"])
     move = sub.add_parser("move", help="log a movement")
     move.add_argument("item")
     move.add_argument("to", nargs="+")
@@ -255,12 +264,19 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
         return do_kit(ctx, read_kit(args.file.read_text(encoding="utf-8")), plan_kit)
     if args.command == "add":
         group = Group(args.prefix.upper(), args.name or args.prefix.upper(), args.count,
-                      canonical_location(args.at))
+                      canonical_location(args.at), True if args.container else None)
         return do_kit(ctx, [group], plan_more)
     if args.command == "import":
         return do_import(ctx, args.file)
     if args.command == "resolve":
         return report(service.submit_resolve(ctx, args.item, " ".join(args.location)))
+    if args.command == "kind":
+        if not is_prefix(args.prefix):
+            print(f"REJECT\n  '{args.prefix}' isn't a kind: 3 letters, e.g. CAS.")
+            return 1
+        store.set_container(ctx.ledger_dir, args.prefix.upper(), args.value == "yes")
+        print(f"OK\n  {args.prefix.upper()} {'holds' if args.value == 'yes' else 'does not hold'} things.")
+        return 0
     if args.command == "people":
         if args.add and args.name:
             print(f"OK\n  {store.add_person(ctx.ledger_dir, ' '.join(args.name))} is on the list.")

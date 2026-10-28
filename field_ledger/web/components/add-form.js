@@ -3,6 +3,8 @@ import { button, el } from "./dom.js";
 
 export const css = `
 .add .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--space); }
+.add .check { display: flex; align-items: center; gap: 0.5em; min-height: var(--tap); }
+.add .check input { width: 1.25rem; height: 1.25rem; min-height: 0; }
 `;
 
 function field(label, input) {
@@ -22,6 +24,9 @@ export function addDialog(places, onAdd) {
   const count = input({ required: true, type: "number", min: 1, max: 100, value: 1 });
   const name = input({ placeholder: "Blue 6S" });
   const at = input({ required: true, placeholder: "truck" });
+  const holds = input({ type: "checkbox" });
+  const holdsLabel = el("label", "check");
+  holdsLabel.append(holds, " Can hold other things (a case, a van, a drone)");
   at.setAttribute("list", "add-places");
   const known = el("datalist", "");
   known.id = "add-places";
@@ -31,12 +36,12 @@ export function addDialog(places, onAdd) {
   const row = el("div", "row");
   row.append(Object.assign(button("Add", "primary"), { type: "submit" }),
              button("Cancel", "", () => dialog.close()));
-  form.append(grid, field("Name", name), field("Where they are", at), known, row);
+  form.append(grid, field("Name", name), field("Where they are", at), known, holdsLabel, row);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     dialog.close();
     onAdd({ prefix: prefix.value.trim(), count: Number(count.value), name: name.value.trim(),
-            at: at.value.trim() });
+            at: at.value.trim(), container: holds.checked });
   });
   dialog.append(el("h2", "", "Add items"), form);
   return dialog;

@@ -18,6 +18,7 @@ def with_case(ctx):
     """seed() plus CAS-01 in the truck, with BAT-01 packed into it."""
     seed(ctx)
     service.add_items(ctx, plan_more(Group("CAS", "Case", 1, "truck"), service.current_state(ctx)))
+    store.set_container(ctx.ledger_dir, "CAS", True)
     assert service.submit_move(ctx, Move("BAT-01", "CAS-01")).event is not None
 
 

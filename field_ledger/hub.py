@@ -31,6 +31,7 @@ from .ledger.ids import canonical_location, is_prefix
 from .ledger.kit import Group, plan_more
 from .ledger.model import Kind, Move, Verdict
 from .ledger.state import State, ancestors, deployed_sha, fold, location_of
+from .ledger.validate import holds_things
 
 WEB_DIR = Path(__file__).parent / "web"
 TYPES = {".html": "text/html", ".css": "text/css", ".js": "text/javascript",
@@ -68,7 +69,7 @@ def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
         chain = ancestors(state, node)                     # parent first, place last
         entry = {"id": node, "group": group, "fixed": node in state.fixed,
                  "parent": chain[0] if chain else "", "location": chain[-1] if chain else "",
-                 "chain": chain}
+                 "chain": chain, "container": holds_things(node, state)}
         if group == "build":
             entry |= {"sha": deployed_sha(state, node), "label": state.labels.get(node, "")}
         if node in open_:
@@ -87,6 +88,7 @@ def board_state(ledger_dir: Path, now: datetime | None = None) -> dict:
     """Read the event files directly, like `show` and the stale-work board: no cache, no
     device, nothing written."""
     state = fold(store.read_events(ledger_dir))
+    state.containers = store.read_containers(ledger_dir)
     return snapshot(state, service.open_conflicts(state), now or utc_now(),
                     store.read_people(ledger_dir))
 
@@ -146,6 +148,8 @@ def api_add(ctx: service.Context, body: dict) -> dict:
     if not isinstance(count, int) or not 1 <= count <= 100:
         raise BadRequest("'count' must be a whole number from 1 to 100.")
     name = text(body, "name", required=False) or prefix.upper()
+    if body.get("container") is True:
+        store.set_container(ctx.ledger_dir, prefix.upper(), True)
     written = service.add_items(ctx, plan_more(Group(prefix.upper(), name, count, at),
                                                service.current_state(ctx)))
     ids = f"{written[0].item}" + (f"..{written[-1].item}" if len(written) > 1 else "")

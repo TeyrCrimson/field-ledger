@@ -7,7 +7,7 @@ phones' events would after a sync; only the device id differs.
 from dataclasses import replace
 from datetime import timedelta
 
-from field_ledger.ledger import service
+from field_ledger.ledger import service, store
 from field_ledger.ledger.cli import main as fl_main
 from field_ledger.ledger.kit import Group, plan_more
 from field_ledger.ledger.model import Kind, Move
@@ -76,6 +76,7 @@ def test_through_a_container_either_order(tmp_path):
     """Yoeng takes BAT-01 out of CAS-01 to site-b while Teyr moves the case to the van."""
     for case_first in (True, False):
         teyr, yoeng, clock = two_phones(tmp_path / str(case_first))
+        store.set_container(teyr.ledger_dir, "CAS", True)
         service.add_items(teyr, plan_more(Group("CAS", "Case", 1, "truck"),
                                           service.current_state(teyr)))
         service.submit_move(teyr, Move("BAT-01", "CAS-01"))

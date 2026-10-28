@@ -56,7 +56,10 @@ class ImportLine:
 
 
 def current_state(ctx: Context) -> State:
-    return fold(store.load(ctx.conn))
+    """The replay, plus which kinds hold things (a setting, not an event)."""
+    state = fold(store.load(ctx.conn))
+    state.containers = store.read_containers(ctx.ledger_dir)
+    return state
 
 
 def deployed_at(ctx: Context, item: str) -> str:

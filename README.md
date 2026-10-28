@@ -16,6 +16,11 @@ Python 3.10+, standard library only. Nothing to install on a field laptop.
 
 > **Status.** This README describes the target design. Each section says what works today
 > (**v0**) and what is **planned**. If they disagree, the v0 line is what the code does.
+>
+> **Decisions vs mechanics.** Design decisions (the model, what events mean, the conflict and
+> trust rules, scope, deadlines) live in a private design doc. This README is canonical for
+> mechanics: commands, grammar, settings, file formats and setup. If the two disagree, the
+> decision stands and this README gets fixed.
 
 ---
 

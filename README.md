@@ -282,6 +282,52 @@ field-ledger show feat/secure-cdr --repo /path/to/repo   # no fetch
 The deployed commit is recorded, not compared: nothing yet tells you the branch has moved
 on since. PR/MR status from GitHub or GitLab is optional and needs a token.
 
+### Sample: one build, end to end (v0)
+
+The stage 5 trial (2026-10-28), run on a fresh clone of this repo. Every command reads
+local Git only; nothing is fetched.
+
+```mermaid
+sequenceDiagram
+    actor You
+    participant CLI as field-ledger / fl
+    participant Code as code clone (local Git)
+    participant Ledger as ledger repo (./ledger)
+
+    You->>CLI: fl init teyr
+    CLI->>Ledger: git init, events/, .gitignore
+    CLI-->>You: OK, device 70e6e900, name teyr
+
+    You->>CLI: field-ledger show feat/build-4
+    CLI->>Code: last commit, merged into origin/main?
+    CLI-->>You: last commit 7d2ab65, merged: yes
+
+    You->>CLI: field-ledger deploy feat/build-4 drone-3
+    CLI->>Code: head of feat/build-4
+    Code-->>CLI: 7d2ab65
+    CLI->>Ledger: read settings.json, build_home = dev
+    CLI->>Ledger: commit 4 events: ADD dev and drone-3 (fixed locations),<br/>ADD feat/build-4 at dev, MOVE dev > drone-3 @7d2ab65
+    CLI-->>You: ✓ feat/build-4 · build · was in dev → drone-3, deployed as 7d2ab65
+
+    You->>CLI: field-ledger deploy feat/build-4 site-b
+    CLI->>Ledger: commit 2 events: ADD site-b, MOVE drone-3 > site-b
+    CLI-->>You: ✓ feat/build-4 · build · was in drone-3 → site-b, deployed as 7d2ab65
+
+    You->>CLI: fl where feat/build-4
+    CLI->>Ledger: replay the event files
+    CLI-->>You: feat/build-4: site-b
+
+    You->>CLI: field-ledger undo (inside 10 minutes)
+    CLI->>Ledger: commit VOID of your last event, the MOVE to site-b
+    CLI-->>You: void ebc0524b: undo
+
+    You->>CLI: fl where feat/build-4
+    CLI-->>You: feat/build-4: drone-3
+```
+
+The tool repo's `git status` stays clean throughout: the ledger is its own repo in a
+gitignored folder.
+
 ### Stale-work board (v0)
 
 Every remote branch is a tool checked out; a branch merged and deleted is a tool back in its slot.

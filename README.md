@@ -34,6 +34,7 @@ fl move BAT-07 site-b                # log a move; prints the logged event and i
 fl move BAT-07 CAS-01                # an item ID as destination packs it into that case
 fl move CAS-01 van                   # ...and everything inside the case goes with it
 fl where BAT-07                      # BAT-07: van (in CAS-01)
+fl resolve BAT-07 van                # settle a ⚠ when two devices disagree
 fl at site-b                         # everything there, including inside cases
 fl flags                             # everything that needs a second look
 fl undo                              # take back your own last command, within 10 minutes
@@ -277,7 +278,8 @@ named) or an item ID, which deploys the build onto that thing. A destination sha
 item ID (three letters and a number) is checked against the kit. If the ledger has a DRN kit
 but no DRN-03, `deploy feat/x DRN-03` is refused as a typo (`DRN-03 is not in the kit`). If
 there is no DRN kit at all, it may be a real place (a building number, `Blk 12`), so it asks
-once (`--yes` to skip); from then on it's a known place. The same goes for `fl move`. The deploy records the
+once (`--yes` to skip); from then on it's a known place. The same goes for `fl move`, and
+the phone board will follow the same rule: it goes through the same service layer. The deploy records the
 branch's head commit in the event's `sha` field (full SHA; empty if unknown), read from
 `--repo` without fetching; with no such branch there the move is still recorded and the
 readback says `commit unknown`. `field-ledger undo` takes it back within 10 minutes.
@@ -424,7 +426,7 @@ Never commit them. Copying the token file is part of takeover.
 
 ---
 
-## Settings (planned)
+## Settings
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -434,6 +436,10 @@ Never commit them. Copying the token file is part of takeover.
 | `nudge_after` | `1` working day | When an unresolved ⚠ nudges the field-ops owner |
 | `ledger_dir` | `./ledger` | Where the ledger's own repo lives |
 | `build_home` | `hq` | Where a build is before its first deploy. **v0**: `fl set build_home <location>`; stored in the ledger repo's `settings.json`, so every device shares it |
+
+**v0**: only `build_home` can be changed (`fl set`). `ledger_dir` comes from `--ledger-dir` or
+`FL_LEDGER_DIR`. `undo_minutes` and `conflict_window` are in force at their defaults but fixed.
+`id_digits` and `nudge_after` are **planned**.
 
 ---
 
@@ -451,7 +457,7 @@ Never commit them. Copying the token file is part of takeover.
 | `ledger/store.py` | Event files (the record), SQLite cache, merge | no |
 | `ledger/service.py` | Validate, then write | no |
 | `ledger/cli.py` | `fl` command; opening a ledger, shared with code mode | no |
-| `cli.py` | `field-ledger` command: board, `show`, `deploy`, `undo` | no |
+| `cli.py` | `field-ledger` command: board, `show`, `deploy`, `label`, `undo` | no |
 
 ## Tests
 

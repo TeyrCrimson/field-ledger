@@ -57,6 +57,11 @@ security labels from a scanner (set by hand for now).
 - **Conflicts (⚠):** two moves of the same node (directly or via a parent) within the conflict
   window, to different destinations, from different devices or with a prompted/import time.
   Same destination = duplicate, merged. One tap writes RESOLVE.
+- **Origin:** a move's `src` is where the log last had the node; a typed "from" is only
+  checked (`from-mismatch`). A new build starts at `build_home` (default `hq`), so nothing
+  comes from nowhere.
+- **ID-shaped destination** (`DRN-03`) that names no item: refused as a typo when that kit
+  exists, asked once (CONFIRM) when it doesn't, then a known place. CLI and phone alike.
 - **Readback:** every move echoes ID, name, previous location and new location
   (`✓ BAT-12 · Blue 6S · was in Case A → van`).
 - **Undo:** VOIDs every event of your own last command (they share a `batch`: a deploy, a kit,

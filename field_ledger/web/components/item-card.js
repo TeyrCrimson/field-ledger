@@ -15,6 +15,8 @@ export const css = `
 .card p { margin: 0.25em 0 0; font-size: 0.875rem; }
 .card .inside, .card .build { color: var(--muted); }
 .card .build { font-family: var(--mono); }
+.card { cursor: pointer; }
+.card.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
 .card.conflict { border-color: var(--warn); background: var(--warn-bg); }
 .card .warn { color: var(--warn); font-weight: 600; }
 .card .sec { float: right; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; }

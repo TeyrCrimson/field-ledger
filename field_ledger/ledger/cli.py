@@ -179,6 +179,9 @@ def build_parser() -> argparse.ArgumentParser:
     settle.add_argument("item")
     settle.add_argument("location", nargs="+")
     sub.add_parser("undo", help="take back your own last command, within 10 minutes")
+    people = sub.add_parser("people", help="the names phones pick from; 'people add <name>' adds one")
+    people.add_argument("add", nargs="?", choices=["add"])
+    people.add_argument("name", nargs="*")
     setting = sub.add_parser("set", help="change a ledger setting, e.g. 'set build_home lab'")
     setting.add_argument("key", choices=sorted(store.DEFAULT_SETTINGS))
     setting.add_argument("value", nargs="+")
@@ -244,6 +247,7 @@ def make_context(args: argparse.Namespace, now: Callable[[], datetime]) -> servi
 
 def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
     if args.command == "init":
+        store.add_person(ctx.ledger_dir, ctx.actor)          # pickable on a phone too
         print(f"OK\n  ledger: {args.ledger_dir}  cache: {args.db}  device: {ctx.device}  "
               f"name: {ctx.actor}")
         return 0
@@ -257,6 +261,12 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
         return do_import(ctx, args.file)
     if args.command == "resolve":
         return report(service.submit_resolve(ctx, args.item, " ".join(args.location)))
+    if args.command == "people":
+        if args.add and args.name:
+            print(f"OK\n  {store.add_person(ctx.ledger_dir, ' '.join(args.name))} is on the list.")
+        for name in store.read_people(ctx.ledger_dir):
+            print(f"  {name}")
+        return 0
     if args.command == "set":
         value = canonical_location(" ".join(args.value))
         store.write_setting(ctx.ledger_dir, args.key, value)

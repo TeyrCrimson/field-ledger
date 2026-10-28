@@ -161,12 +161,22 @@ def init_ledger(ledger_dir: Path) -> bool:
     return True
 
 
+def stored_settings(ledger_dir: Path) -> dict:
+    path = ledger_dir / SETTINGS_FILE
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def commit_settings(ledger_dir: Path, stored: dict, message: str) -> None:
+    (ledger_dir / SETTINGS_FILE).write_text(json.dumps(stored, indent=2, sort_keys=True) + "\n",
+                                            encoding="utf-8")
+    run_git(ledger_dir, "add", "--", SETTINGS_FILE)
+    run_git(ledger_dir, "commit", "-q", "-m", message)
+
+
 def read_settings(ledger_dir: Path) -> dict[str, str]:
     """Ledger-wide settings. They live in the ledger repo next to the events, so every
     device that pulls the ledger deploys from the same home. A missing key is its default."""
-    path = ledger_dir / SETTINGS_FILE
-    stored = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    return {**DEFAULT_SETTINGS, **stored}
+    return {**DEFAULT_SETTINGS, **stored_settings(ledger_dir)}
 
 
 def write_setting(ledger_dir: Path, key: str, value: str) -> None:
@@ -174,12 +184,25 @@ def write_setting(ledger_dir: Path, key: str, value: str) -> None:
     changes what the next command does, never what the log already says."""
     if key not in DEFAULT_SETTINGS:
         raise KeyError(key)
-    path = ledger_dir / SETTINGS_FILE
-    stored = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    stored[key] = value
-    path.write_text(json.dumps(stored, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    run_git(ledger_dir, "add", "--", SETTINGS_FILE)
-    run_git(ledger_dir, "commit", "-q", "-m", f"set {key} = {value}")
+    commit_settings(ledger_dir, {**stored_settings(ledger_dir), key: value}, f"set {key} = {value}")
+
+
+def read_people(ledger_dir: Path) -> list[str]:
+    """The ledger's People list: the names phones pick from, so logged_by is never a typo."""
+    return list(stored_settings(ledger_dir).get("people", []))
+
+
+def add_person(ledger_dir: Path, name: str) -> str:
+    """Add a name once (ignoring case and spacing) and return it as the list spells it.
+    Someone new types their name once, when they first open the board."""
+    name = " ".join(name.split())
+    people = read_people(ledger_dir)
+    known = next((p for p in people if p.casefold() == name.casefold()), None)
+    if known:
+        return known
+    commit_settings(ledger_dir, {**stored_settings(ledger_dir), "people": people + [name]},
+                    f"people: add {name}")
+    return name
 
 
 def to_json(event: Event) -> str:

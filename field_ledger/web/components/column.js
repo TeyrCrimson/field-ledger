@@ -18,6 +18,8 @@ export const css = `
 .column .count { color: var(--muted); font-weight: normal; }
 .column ul { display: grid; gap: calc(var(--space) / 2); margin: 0; padding: 0; list-style: none; }
 .column .empty { margin: 0; color: var(--muted); font-size: 0.875rem; }
+.picking .column { cursor: copy; }
+.picking .column:hover, .column.drop { border-color: var(--accent); }
 `;
 
 export function column(place, cards) {

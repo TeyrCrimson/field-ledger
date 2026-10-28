@@ -63,14 +63,21 @@ def check_item(raw: str, state: State) -> tuple[str | None, Verdict | None]:
 
 
 def check_id_destination(raw: str, state: State) -> Verdict | None:
-    """An ID-shaped destination names an item. If there is no such item it's a typo, not
-    a new place: `DRN-03` used to become a location 'drn-03' with only a flag. A place an
-    older ledger already knows by that name still works."""
-    if canonical_item(raw) is None or node_id(raw, state) is not None:
+    """An ID-shaped destination (`DRN-03`) that names no item. With a DRN kit in the ledger
+    it's a typo: refused. With no DRN kit it may be a real place (a building number, a bay),
+    so ask once; after that it's a known place. `DRN-03` used to become a location 'drn-03'
+    with only a flag. A place the ledger already knows by that name is fine."""
+    item = canonical_item(raw)
+    if item is None or node_id(raw, state) is not None:
         return None
-    if resolve(canonical_location(raw), state.aliases) in state.locations:
+    place = canonical_location(raw)
+    if resolve(place, state.aliases) in state.locations:
         return None
-    return Verdict(Kind.REJECT, (not_found(raw, state),))
+    prefix = item.split("-")[0]
+    if any(i.startswith(f"{prefix}-") for i in state.items):
+        return Verdict(Kind.REJECT, (not_found(raw, state),))
+    return Verdict(Kind.CONFIRM, (f"'{place}' looks like an item ID, but there is no {prefix} "
+                                  f"kit. A new place?",), ("id-shaped",))
 
 
 def check_destination(dst: str, state: State) -> Verdict | None:
@@ -151,14 +158,15 @@ def validate_move(cmd: Move, actor: str, state: State, now: datetime) -> tuple[s
     item, bad = check_item(cmd.item, state)
     if bad:
         return None, bad
-    bad = check_id_destination(cmd.dst, state)
-    if bad:
-        return item, bad
+    shape = check_id_destination(cmd.dst, state)
+    if shape and shape.kind == Kind.REJECT:
+        return item, shape
     dst = resolve(canonical_destination(cmd.dst, state), state.aliases)
     stop = check_cycle(item, dst, state) or check_duplicate(item, dst, actor, state, now)
     if stop:
         return item, stop
     return item, combine([
+        shape,
         check_destination(dst, state),
         check_origin(item, cmd.src, state),
         check_same_place(item, dst, state),

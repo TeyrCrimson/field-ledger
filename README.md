@@ -273,10 +273,11 @@ field-ledger deploy feat/secure-cdr drone-3 --repo /path/to/repo
 ```
 
 The destination may be a location (created as a fixed location node the first time it is
-named) or an item ID, which deploys the build onto that thing. An item ID must already be in
-the kit: `deploy feat/x DRN-03` with no DRN-03 is refused (`DRN-03 is not in the kit`), not
-turned into a new place. The same goes for `fl move`. A place an older ledger already knows
-by such a name keeps working. The deploy records the
+named) or an item ID, which deploys the build onto that thing. A destination shaped like an
+item ID (three letters and a number) is checked against the kit. If the ledger has a DRN kit
+but no DRN-03, `deploy feat/x DRN-03` is refused as a typo (`DRN-03 is not in the kit`). If
+there is no DRN kit at all, it may be a real place (a building number, `Blk 12`), so it asks
+once (`--yes` to skip); from then on it's a known place. The same goes for `fl move`. The deploy records the
 branch's head commit in the event's `sha` field (full SHA; empty if unknown), read from
 `--repo` without fetching; with no such branch there the move is still recorded and the
 readback says `commit unknown`. `field-ledger undo` takes it back within 10 minutes.

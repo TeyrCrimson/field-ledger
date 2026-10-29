@@ -253,7 +253,8 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
 
 - **Move:** tap a card, then tap a place, or a card whose kind holds things (a case, a van) to
   pack it inside; tapping any other card picks that one instead. On a laptop, drag it. Or type
-  where it went in the bar at the bottom.
+  where it went in the bar at the bottom. While a card is picked, the board holds other
+  people's changes until you drop or cancel, and the status line says so.
 - **Readback:** every write shows `✓ BAT-03 · Blue 6S · was in truck → van` with **Undo**.
   "Undo my last" in the header works for 10 minutes.
 - **Asked first:** the same rules as `fl`. A new ID-shaped place or a fixed location asks

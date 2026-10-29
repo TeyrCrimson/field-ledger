@@ -37,10 +37,13 @@ export const css = `
   font-family: var(--font);
   font-weight: 600;
   text-shadow: none;
-  touch-action: none;                   /* a drag starts here; empty space scrolls */
+  touch-action: manipulation;           /* a swipe scrolls; a drag starts after a hold */
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
+.here.lifted, .vehicle.lifted, .tile.lifted { transform: translateY(calc(-1 * var(--px))); }
+.lifted .name { outline: var(--px) solid var(--accent); outline-offset: var(--px); }
 .here:active, .vehicle:active, .tile:active { transform: none; box-shadow: none; }
 .name {
   display: inline-flex;

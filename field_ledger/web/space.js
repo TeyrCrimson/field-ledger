@@ -25,6 +25,9 @@ import { icon, kindOf } from "./icons.js";
 const REFRESH_MS = 10_000;
 const TOAST_MS = 15_000;
 const FLIP_MS = 600;                                    // hold an item over ◀ ▶ this long to flip
+const HOLD_MS = 300;                                    // a finger holds this long to pick something up
+const EDGE = 40;                                        // carrying within this of an edge scrolls
+const EDGE_SPEED = 8;                                   // pixels a frame
 const ZOOMS = ["Out", "Normal", "In"];                  // icons at 1×, 2×, 3×
 const COLOURS = ["green", "blue", "red", "gold", "metal"];
 
@@ -321,7 +324,10 @@ async function savePosition(place, x, y) {
 
 // --- dragging ----------------------------------------------------------------------------
 
-// Press, then move a few pixels: a drag. Anything less is a tap (the click handlers).
+// With a mouse, press and move a few pixels: a drag. With a finger, hold first (HOLD_MS),
+// as when moving an app icon on a phone: a swipe that starts on an icon still scrolls the
+// space or the box, and a tap still opens it. Anything that isn't a drag is a tap (the
+// click handlers). While carrying, near the edge of the box or the space scrolls it.
 function onPress(event) {
   const source = event.target.closest(".here, .vehicle, .tile");
   if (!source || event.button > 0) return;
@@ -329,7 +335,13 @@ function onPress(event) {
   const isLocation = source.classList.contains("here");
   const spotNode = source.closest(".spot");
   const start = isLocation ? [spotNode.offsetLeft, spotNode.offsetTop] : null;
-  let ghost = null, over = null, flipTimer = null;
+  let ghost = null, over = null, flipTimer = null, edge = null, edgeLoop = 0, at = [x0, y0];
+  let lifted = event.pointerType !== "touch";
+  const holdTimer = lifted ? 0 : setTimeout(() => {
+    lifted = true;
+    source.classList.add("lifted");
+    navigator.vibrate?.(10);
+  }, HOLD_MS);
   // On the window, not the source: flipping the box mid-drag redraws it, source included.
 
   const hover = (x, y) => {
@@ -347,10 +359,29 @@ function onPress(event) {
       clearTimeout(flipTimer);
       flipTimer = null;
     }
+    // Near an edge of whatever scrolls under the finger: scroll it, faster the closer.
+    const pane = under?.closest(".box-body, .space");
+    const box = pane?.getBoundingClientRect();
+    const push = (low, high, v) => (v < low + EDGE ? -1 : v > high - EDGE ? 1 : 0) * EDGE_SPEED;
+    edge = box && { pane, dx: pane.matches(".space") ? push(box.left, box.right, x) : 0,
+                    dy: push(box.top, box.bottom, y) };
+    if (edge && (edge.dx || edge.dy) && !edgeLoop) edgeLoop = requestAnimationFrame(nudge);
+  };
+  const nudge = () => {
+    edgeLoop = 0;
+    if (!ghost || !edge || (!edge.dx && !edge.dy)) return;
+    edge.pane.scrollBy(edge.dx, edge.dy);
+    hover(...at);
   };
   const move = (step) => {
-    if (!busy && Math.hypot(step.clientX - x0, step.clientY - y0) < 8) return;
+    const far = Math.hypot(step.clientX - x0, step.clientY - y0) >= 8;
+    if (!lifted) {                                     // moved before the hold: a swipe
+      if (far) quit();
+      return;
+    }
+    if (!busy && !far) return;
     busy = true;
+    at = [step.clientX, step.clientY];
     if (isLocation) {                                  // the place itself slides with the finger
       spotNode.style.left = `${start[0] + step.clientX - x0}px`;
       spotNode.style.top = `${Math.max(0, start[1] + step.clientY - y0)}px`;
@@ -365,14 +396,24 @@ function onPress(event) {
     ghost.style.transform = `translate(${step.clientX}px, ${step.clientY}px)`;
     hover(step.clientX, step.clientY);
   };
-  const end = (up) => {
+  // Once lifted, the finger carries the item: the page mustn't scroll under it.
+  const hold = (touch) => { if (lifted) touch.preventDefault(); };
+  const quit = () => {
+    clearTimeout(holdTimer);
+    clearTimeout(flipTimer);
+    cancelAnimationFrame(edgeLoop);
     removeEventListener("pointermove", move);
     removeEventListener("pointerup", end);
     removeEventListener("pointercancel", end);
-    clearTimeout(flipTimer);
+    removeEventListener("touchmove", hold);
+    source.classList.remove("lifted");
     over?.classList.remove("drop-over");
     ghost?.remove();
     document.querySelectorAll(".flip.armed").forEach((b) => b.classList.remove("armed"));
+  };
+  const end = (up) => {
+    quit();
+    if (lifted && event.pointerType === "touch") source.dataset.dragged = "1";   // held: not a tap
     if (!busy) return;
     source.dataset.dragged = "1";                    // the click that follows isn't a tap
     busy = false;
@@ -389,6 +430,7 @@ function onPress(event) {
   addEventListener("pointermove", move);
   addEventListener("pointerup", end);
   addEventListener("pointercancel", end);
+  addEventListener("touchmove", hold, { passive: false });
 }
 
 function onTap(event) {
@@ -522,6 +564,10 @@ async function refresh() {
 const space = $("space");
 space.addEventListener("pointerdown", onPress);
 space.addEventListener("click", onTap);
+// A held finger would open the phone's own long-press menu on an icon; the hold is ours.
+document.addEventListener("contextmenu", (event) => {
+  if (event.target.closest(".here, .vehicle, .tile")) event.preventDefault();
+});
 document.addEventListener("pointerdown", (event) => { if (event.target.closest("#box")) onPress(event); });
 document.addEventListener("click", (event) => { if (event.target.closest("#box")) onTap(event); });
 renderHeader();

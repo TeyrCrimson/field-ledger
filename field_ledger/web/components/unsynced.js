@@ -8,10 +8,11 @@ export const css = `
   align-items: center;
   min-height: var(--tap);
   padding: 0 var(--space);
+  margin: var(--px);
   color: var(--warn);
   background: var(--warn-bg);
-  border: 1px solid var(--warn);
-  border-radius: var(--radius);
+  box-shadow: var(--frame-thin);
+  font-family: var(--pixel);
   font-weight: 600;
 }
 `;

@@ -3,7 +3,7 @@
 import { button, el } from "./dom.js";
 
 export const css = `
-.people .names { display: grid; gap: calc(var(--space) / 2); }
+.people .names { display: grid; gap: calc(var(--space) / 2); margin-top: var(--space); }
 .people .hint { margin: 0; color: var(--muted); font-size: 0.875rem; }
 `;
 

@@ -11,7 +11,7 @@ export const css = `
   height: auto;
   margin: var(--space) auto;
   background: var(--qr-light);
-  border-radius: var(--radius);
+  box-shadow: var(--frame-thin);
 }
 .add-phone ol { max-width: 20rem; margin: 0 auto; padding-left: 1.4em; text-align: left; }
 .add-phone li { margin: 0.4em 0; }

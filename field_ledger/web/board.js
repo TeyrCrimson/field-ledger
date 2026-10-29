@@ -19,9 +19,10 @@ import { column, css as columnCss } from "./components/column.js";
 import { confirmDialog, css as confirmCss } from "./components/confirm.js";
 import { button, describeWrite, dialogCss } from "./components/dom.js";
 import { itemCard, markCard, unmarkCard, css as cardCss } from "./components/item-card.js";
+import { icon } from "./icons.js";
 import { needsLook, css as needsCss } from "./components/needs-look.js";
 import { peoplePicker, css as peopleCss } from "./components/people.js";
-import { toast, css as toastCss } from "./components/toast.js";
+import { show, toast, css as toastCss } from "./components/toast.js";
 import { unsyncedBadge, css as unsyncedCss } from "./components/unsynced.js";
 
 const REFRESH_MS = 10_000;
@@ -46,10 +47,7 @@ function showDialog(dialog) {
 }
 
 function say(text, options = {}) {
-  const node = toast(text, options);
-  $("toasts").append(node);
-  setTimeout(() => node.remove(), TOAST_MS);
-  return node;
+  return show($("toasts"), toast(text, options), TOAST_MS);
 }
 
 const cardOf = (id) => id && document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
@@ -67,7 +65,7 @@ async function act(command, body = {}) {
   } catch (error) {
     return say(`Not logged: ${error.message}`, { error: true });
   } finally {
-    sending?.remove();
+    sending?.dismiss();
     if (card) unmarkCard(card);
   }
   if (answer.repeat || answer.queued) {
@@ -218,13 +216,19 @@ function pickName(required) {
   showDialog(dialog);
 }
 
+// A button with a pixel icon in front (not an emoji: every phone draws those its own way).
+function withIcon(node, kind) {
+  node.prepend(icon(kind));
+  return node;
+}
+
 function renderHeader() {
   $("actions").replaceChildren(
     ...(unsynced() ? [unsyncedBadge(unsynced())] : []),
     button(me.name ? `You: ${me.name}` : "Who are you?", "", () => pickName(false)),
     button("+ Add items", "", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))),
     button("Undo my last", "", () => act("undo")),
-    button("📱 Add a phone", "", addPhone),
+    withIcon(button("Add a phone", "", addPhone), "phone"),
   );
 }
 

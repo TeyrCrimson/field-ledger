@@ -49,7 +49,7 @@ from .ledger.validate import holds_things
 WEB_DIR = Path(__file__).parent / "web"
 TYPES = {".html": "text/html", ".css": "text/css", ".js": "text/javascript",
          ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
-         ".webmanifest": "application/manifest+json"}
+         ".webmanifest": "application/manifest+json", ".ttf": "font/ttf", ".txt": "text/plain"}
 MAX_BODY = 16 * 1024                        # a move is a few hundred bytes
 DEVICE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 PEEK_SECONDS = 10                           # a client that sends nothing gives up its thread

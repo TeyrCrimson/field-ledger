@@ -91,6 +91,18 @@ def test_the_page_and_its_modules_are_served(ledger):
         server.shutdown()
 
 
+def test_the_boards_font_is_served_from_the_hub_with_its_licence(ledger):
+    """No CDN: a phone with no internet still gets the font, and the OFL travels with it."""
+    server, base = start(ledger)
+    try:
+        status, kind, font = get(f"{base}/fonts/PixelifySans.ttf")
+        assert status == 200 and kind == "font/ttf" and font[:4] == b"\x00\x01\x00\x00"
+        status, kind, licence = get(f"{base}/fonts/OFL.txt")
+        assert status == 200 and kind.startswith("text/plain") and b"SIL Open Font License" in licence
+    finally:
+        server.shutdown()
+
+
 def test_a_design_swaps_one_file_and_nothing_else(ledger, tmp_path):
     design = tmp_path / "design"
     shutil.copytree(hub.WEB_DIR, design)

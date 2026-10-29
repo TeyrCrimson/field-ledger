@@ -4,22 +4,24 @@ import { el } from "./dom.js";
 
 export const css = `
 .column {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
   padding: var(--space);
+  background: var(--surface);
+  box-shadow: var(--frame);
 }
 .column h2 {
   display: flex;
   justify-content: space-between;
   margin: 0 0 var(--space);
-  font-size: 1rem;
+  padding-bottom: calc(var(--space) / 2);
+  border-bottom: var(--px) solid var(--surface-2);
+  font-size: 1.15rem;
 }
-.column .count { color: var(--muted); font-weight: normal; }
-.column ul { display: grid; gap: calc(var(--space) / 2); margin: 0; padding: 0; list-style: none; }
+.column .count { color: var(--muted); }
+/* The left padding is the ▶ pointer's room, as in a menu. */
+.column ul { display: grid; gap: calc(var(--space) / 2); margin: 0; padding: 0 0 0 22px; list-style: none; }
 .column .empty { margin: 0; color: var(--muted); font-size: 0.875rem; }
 .picking .column { cursor: copy; }
-.picking .column:hover, .column.drop { border-color: var(--accent); }
+.picking .column:hover, .column.drop { --trim: var(--accent); }
 `;
 
 export function column(place, cards) {

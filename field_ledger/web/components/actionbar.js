@@ -13,23 +13,14 @@ export const css = `
   gap: calc(var(--space) / 2);
   padding: var(--space);
   background: var(--surface);
-  border-top: 2px solid var(--accent);
+  box-shadow: var(--frame);
 }
 .board.picking { padding-bottom: 16rem; }    /* the bar never covers the last cards */
 .actionbar p { margin: 0; }
 .actionbar .hint { color: var(--muted); font-size: 0.875rem; }
 .actionbar form, .actionbar .row { display: flex; flex-wrap: wrap; gap: calc(var(--space) / 2); }
-.actionbar input {
-  flex: 1;
-  min-width: 8rem;
-  min-height: var(--tap);
-  padding: 0 var(--space);
-  font: inherit;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
+.actionbar > p:first-child { font-family: var(--pixel); font-size: 1.1rem; font-weight: 600; }
+.actionbar input { flex: 1; min-width: 8rem; }     /* the rest of its look: dom.js */
 `;
 
 export function actionBar(node, places, { onMove, onResolve, onLabel, onCancel }) {

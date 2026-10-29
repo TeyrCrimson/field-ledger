@@ -296,7 +296,7 @@ phone must use it over HTTPS: browsers only keep a page working offline on a sec
 hub has its own certificate authority for that, and joining works like linking WhatsApp to a
 computer:
 
-1. On the laptop, tap **📱 Add a phone** (or use the QR code `serve --lan` prints).
+1. On the laptop, tap **Add a phone** (or use the QR code `serve --lan` prints).
 2. Point the phone's camera at the code and open the link.
 3. The phone shows three steps for its own kind (Android or iPhone): get the hub's certificate,
    trust it in Settings (a web page isn't allowed to do that part), and a check that turns
@@ -339,6 +339,16 @@ committer. `GET /` is the board from `field_ledger/web/`: plain files, no build 
 `tokens.css` holds colours, spacing and type; each file in `components/` carries its own markup
 and style; `board.js` wires them up and `api.js` does the writes. A design pass swaps the files;
 `/state.json` and the API are the contract it must keep.
+
+**The look.** Pixel art, drawn for this board: one small palette (day and night, following the
+phone's setting), framed panels, a ▶ pointer on the picked card, and readbacks in a text box
+at the bottom that types out fast (tap it to show the rest, tap again to put it away; three at
+a time, the rest wait their turn). Headings, buttons and menus use Pixelify Sans
+(`web/fonts/`, SIL Open Font License, served by the hub, never a CDN); IDs and body text stay in
+a plain font, where `l`/`1` and `O`/`0` can't be mixed up. Item icons are 16×16 grids of
+letters in `web/icons.js`, one per kind (by ID prefix: `BAT`, `CAM`, `CAS`; builds: `build`).
+A kind with no icon gets a tile with its letters. To draw one, copy a sprite there and change
+the letters; `pytest` checks each is 16×16 with a colour for every letter.
 
 **Reaching it from phones.** Phones and the hub join the travel router. Then:
 
@@ -599,7 +609,7 @@ Never commit them. Copying the token file is part of takeover.
 | `hub.py` | The hub: `/state.json`, the web front end, the board's writes (`/api/*`), http and HTTPS on one port | no |
 | `tls.py` | The hub's certificate authority and certificate (runs `openssl`) | no |
 | `qr.py` | QR codes for "Add a phone" | yes |
-| `web/` | The board: `tokens.css`, `components/*.js`, `board.js`, `api.js`, `sw.js` (offline), `setup.html`/`setup.js` (adding a phone). No build step | (front end) |
+| `web/` | The board: `tokens.css`, `components/*.js`, `icons.js`, `fonts/`, `board.js`, `api.js`, `sw.js` (offline), `setup.html`/`setup.js` (adding a phone). No build step | (front end) |
 
 ## Tests
 

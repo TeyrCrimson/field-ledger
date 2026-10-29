@@ -370,7 +370,7 @@ def do_serve(argv: list[str]) -> int:
             print("  WSL2 is in NAT mode: phones can't reach this address. "
                   "See README, \"The hub\", for the one-time setup.")
         server.tls = start_https(the_hub, address)
-        print("Add a phone: scan this with its camera (or \"📱 Add a phone\" on the board).")
+        print("Add a phone: scan this with its camera (or \"Add a phone\" on the board).")
         print(qr.terminal(qr.encode(the_hub.setup_url)))
     if not store.read_people(args.ledger_dir):
         print("  No People yet: the first person to open the board adds their name.")

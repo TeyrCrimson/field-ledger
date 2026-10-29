@@ -1,21 +1,38 @@
 /* Design tokens and page layout. A design pass starts here: components read these
-   variables and never hard-code a colour, size or font of their own. */
+   variables and never hard-code a colour, size or font of their own.
+
+   The look: pixel art, drawn from scratch. One small palette (day and night), frames with
+   stepped corners, a pixel font for headings, buttons and menus. IDs and body text stay in
+   a plain font, where l/1 and O/0 can't be mixed up. Icons: icons.js. */
+
+@font-face {
+  font-family: "Pixelify Sans";            /* SIL Open Font License: fonts/OFL.txt */
+  src: url("fonts/PixelifySans.ttf") format("truetype");
+  font-weight: 400 700;
+  font-display: swap;
+}
 
 :root {
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --pixel: "Pixelify Sans", var(--font);
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --text: #1c1e21;
-  --muted: #565c63;
-  --bg: #f3f4f6;
-  --surface: #ffffff;
-  --line: #d7dade;
-  --accent: #1f5fbf;
+  --text: #2b2d42;
+  --text-shadow: #d6d7ca;                  /* pixel text gets a 1-pixel shadow, down-right */
+  --muted: #585c74;
+  --outline: #2b2d42;                      /* frames: a dark ink, not pure black */
+  --ground: #9fd3b0;                       /* the floor the panels sit on, in 16 px tiles */
+  --ground-2: #96cca8;
+  --surface: #fbfbf4;                      /* panel paper */
+  --surface-2: #e9eadc;                    /* its shaded edge, bottom and right */
+  --trim: #3b74c4;                         /* the coloured band inside a frame */
+  --select: #fff1a8;                       /* the row the ▶ points at */
+  --accent: #c2412b;
   --on-accent: #ffffff;
-  --ok: #2f6f3e;
-  --error: #b3261e;
+  --ok: #2f7d3c;
+  --error: #c0392b;
   --warn: #7a4f00;
-  --warn-bg: #fff3d1;
+  --warn-bg: #fff0b8;
 
   --sec-crit: #b3261e;
   --sec-high: #b23c0b;
@@ -27,21 +44,27 @@
   --qr-dark: #000000;
   --qr-light: #ffffff;
 
+  --px: 3px;                               /* one frame pixel */
   --space: 0.75rem;
-  --radius: 8px;
+  --radius: 0;                             /* corners are stepped (--frame), never rounded */
   --column-min: 16rem;
   --tap: 44px;
+
 }
 
+/* Night: the same palette, darker. Outlines stay darker than what they frame. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #e6e7ea;
-    --muted: #a3a9b1;
-    --bg: #16181c;
-    --surface: #202329;
-    --line: #353a42;
-    --accent: #7fb0ff;
-    --on-accent: #0b1a33;
+    --text: #eef0e6;
+    --text-shadow: #10131d;
+    --muted: #a9adc2;
+    --outline: #0b0e18;
+    --ground: #18202e;
+    --ground-2: #1c2536;
+    --surface: #2a3045;
+    --surface-2: #22283a;
+    --trim: #4f7fc8;
+    --select: #4f4720;
     --ok: #8fd19e;
     --error: #ff8a80;
     --warn: #ffd27a;
@@ -54,41 +77,77 @@
   }
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+  /* A pixel window: a --trim band, an --outline ring, one stepped pixel at each corner.
+     Box shadows only, so it needs no image and recolours with the theme. Declared on every
+     element, so a component recolours its band by setting --trim (a ⚠, a drop target). */
+  --frame:
+    0 calc(-1 * var(--px)) 0 var(--trim), 0 var(--px) 0 var(--trim),
+    calc(-1 * var(--px)) 0 0 var(--trim), var(--px) 0 0 var(--trim),
+    0 calc(-2 * var(--px)) 0 var(--outline), 0 calc(2 * var(--px)) 0 var(--outline),
+    calc(-2 * var(--px)) 0 0 var(--outline), calc(2 * var(--px)) 0 0 var(--outline),
+    calc(-1 * var(--px)) calc(-1 * var(--px)) 0 var(--outline),
+    var(--px) calc(-1 * var(--px)) 0 var(--outline),
+    calc(-1 * var(--px)) var(--px) 0 var(--outline),
+    var(--px) var(--px) 0 var(--outline),
+    inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 var(--surface-2);
+  /* The small version, for buttons and cards: an outline ring with notched corners. */
+  --frame-thin:
+    0 calc(-1 * var(--px)) 0 var(--outline), 0 var(--px) 0 var(--outline),
+    calc(-1 * var(--px)) 0 0 var(--outline), var(--px) 0 0 var(--outline),
+    inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 var(--surface-2);
+}
 
 body {
   margin: 0;
   font-family: var(--font);
   color: var(--text);
-  background: var(--bg);
+  background: var(--ground);
+  background-image: conic-gradient(var(--ground-2) 25%, transparent 0 50%,
+                                   var(--ground-2) 0 75%, transparent 0);
+  background-size: 32px 32px;
 }
+
+/* Pixel text: the pixel font, with its shadow. */
+h1, h2, button, summary, .pixel {
+  font-family: var(--pixel);
+  text-shadow: calc(var(--px) * 0.67) calc(var(--px) * 0.67) 0 var(--text-shadow);
+}
+button.primary, .bar h1 { text-shadow: calc(var(--px) * 0.67) calc(var(--px) * 0.67) 0 var(--outline); }
 
 .bar {
   position: sticky;
   top: 0;
+  z-index: 4;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space);
   padding: var(--space) calc(var(--space) * 1.5);
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
+  background: var(--trim);
+  box-shadow: 0 var(--px) 0 var(--outline);
 }
 
-.bar h1 { margin: 0; font-size: 1.1rem; }
-.bar nav { display: flex; flex-wrap: wrap; gap: calc(var(--space) / 2); }
-.bar p { margin: 0; color: var(--muted); font-size: 0.875rem; }
+.bar h1 { margin: 0; color: var(--on-accent); font-size: 1.4rem; font-weight: 700; letter-spacing: 0.02em; }
+.bar nav { display: flex; flex-wrap: wrap; gap: var(--space); }
+.bar p { margin: 0; color: var(--on-accent); font-size: 0.875rem; }
 
-/* A column per place on a laptop; one stacked column on a phone. */
+/* A column per place on a laptop; one stacked column on a phone. The gap leaves room for
+   the frames, which are drawn outside each panel. */
 .board {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--column-min), 1fr));
-  gap: var(--space);
+  gap: calc(var(--space) + 4 * var(--px));
   align-items: start;
-  padding: var(--space);
+  padding: calc(var(--space) + 3 * var(--px));
 }
 
 @media (max-width: 40rem) {
   .board { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
 }

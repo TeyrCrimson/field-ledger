@@ -5,15 +5,15 @@ import { button, describeWrite, el } from "./dom.js";
 
 export const css = `
 .needs-look {
-  margin: var(--space) var(--space) 0;
+  --trim: var(--warn);
+  margin: calc(var(--space) + 3 * var(--px)) calc(var(--space) + 3 * var(--px)) 0;
   padding: var(--space);
   background: var(--warn-bg);
-  border: 2px solid var(--warn);
-  border-radius: var(--radius);
+  box-shadow: var(--frame);
 }
-.needs-look h2 { margin: 0 0 var(--space); font-size: 1rem; }
+.needs-look h2 { margin: 0 0 var(--space); font-size: 1.15rem; }
 .needs-look ul { display: grid; gap: var(--space); margin: 0; padding: 0; list-style: none; }
-.needs-look li { padding: calc(var(--space) / 2) var(--space); background: var(--surface); border-radius: var(--radius); }
+.needs-look li { margin: var(--px); padding: calc(var(--space) / 2) var(--space); background: var(--surface); box-shadow: var(--frame-thin); }
 .needs-look p { margin: 0.25em 0 0; font-size: 0.875rem; }
 .needs-look .what { margin: 0; font-family: var(--mono); font-size: 1rem; font-weight: 600; }
 .needs-look .who { color: var(--muted); }

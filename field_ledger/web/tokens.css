@@ -23,6 +23,10 @@
   --sec-low: #2f6f3e;
   --sec-na: #565c63;
 
+  /* QR codes stay dark on light in both themes: phone cameras need it. */
+  --qr-dark: #000000;
+  --qr-light: #ffffff;
+
   --space: 0.75rem;
   --radius: 8px;
   --column-min: 16rem;

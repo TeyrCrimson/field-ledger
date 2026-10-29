@@ -12,6 +12,11 @@ own sequence number, and queues it while the hub is away. The hub stamps recorde
 event id once (a resend answers "already logged"), and keeps a queued write it would refuse or
 ask about on the ledger's Needs a look list until a person settles it: nobody was there to ask.
 
+Phones open it over HTTPS too (field stage 3b), so the board can open with no hub: plain
+http and HTTPS share one port, told apart by the first byte. A phone joins by scanning the QR
+code on the laptop (`/phone-setup.json`), which leads to `setup.html` and the hub's own CA
+(`/ca.crt`, see tls.py).
+
 The hub binds to 127.0.0.1 unless told otherwise. There are no logins (the threat model is
 honest mistakes), so the LAN is opt-in, and every write names a person from the People list
 and a device.
@@ -21,6 +26,7 @@ import ipaddress
 import json
 import re
 import socket
+import ssl
 import threading
 import uuid
 from collections.abc import Callable
@@ -32,6 +38,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote
 
+from . import qr
 from .ledger import service, store
 from .ledger.ids import canonical_location, is_prefix
 from .ledger.kit import Group, plan_more
@@ -45,6 +52,7 @@ TYPES = {".html": "text/html", ".css": "text/css", ".js": "text/javascript",
          ".webmanifest": "application/manifest+json"}
 MAX_BODY = 16 * 1024                        # a move is a few hundred bytes
 DEVICE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+PEEK_SECONDS = 10                           # a client that sends nothing gives up its thread
 
 
 def utc_now() -> datetime:
@@ -58,6 +66,9 @@ class Hub:
     db: Path = Path("field-ledger.db")      # the cache; synced from the event files per write
     now: Callable[[], datetime] = utc_now
     lock: threading.Lock = field(default_factory=threading.Lock)
+    setup_url: str = ""                     # what the laptop's QR code opens; '' without --lan
+    ca_cert: Path | None = None             # the CA a phone installs; None without HTTPS
+    ca_name: str = ""                       # how a phone lists that CA
 
 
 class BadRequest(ValueError):
@@ -310,6 +321,14 @@ class Board(BaseHTTPRequestHandler):
         path = unquote(self.path.split("?", 1)[0])
         if path == "/state.json":
             return self.send_json(HTTPStatus.OK, board_state(self.hub.ledger_dir, self.hub.now()))
+        if path == "/phone-setup.json" and self.hub.setup_url:
+            return self.send_json(HTTPStatus.OK, phone_setup(self.hub))
+        if path == "/ca.crt" and self.hub.ca_cert:
+            return self.send(HTTPStatus.OK, "application/x-x509-ca-cert",
+                             self.hub.ca_cert.read_bytes(),
+                             {"Content-Disposition": 'attachment; filename="field-ledger-hub.crt"'})
+        if path == "/web-files.json":
+            return self.send_json(HTTPStatus.OK, web_files(self.hub.web_dir))
         root = self.hub.web_dir.resolve()
         file = (root / ("index.html" if path == "/" else path.lstrip("/"))).resolve()
         if not file.is_relative_to(root) or not file.is_file():     # no ../ out of web/
@@ -334,11 +353,14 @@ class Board(BaseHTTPRequestHandler):
             return self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
         self.send_json(HTTPStatus.OK, result)
 
-    def send_json(self, status: HTTPStatus, data: dict) -> None:
+    def send_json(self, status: HTTPStatus, data: dict | list) -> None:
         self.send(status, TYPES[".json"], json.dumps(data, indent=1).encode())
 
-    def send(self, status: HTTPStatus, kind: str, body: bytes) -> None:
+    def send(self, status: HTTPStatus, kind: str, body: bytes,
+             headers: dict[str, str] | None = None) -> None:
         self.send_response(status)
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Content-Type", f"{kind}; charset=utf-8" if kind.startswith("text")
                          else kind)
         self.send_header("Content-Length", str(len(body)))
@@ -347,9 +369,48 @@ class Board(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def make_server(hub: Hub, host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
+def phone_setup(hub: Hub) -> dict:
+    """What the laptop's "Add a phone" shows: the setup address and its QR code, a row of
+    0s and 1s per line (the front end draws it), and the CA's name for removing old ones."""
+    return {"url": hub.setup_url, "ca_name": hub.ca_name,
+            "qr": ["".join("1" if m else "0" for m in row) for row in qr.encode(hub.setup_url)]}
+
+
+def web_files(web_dir: Path) -> list[str]:
+    """Every file of the board, for the service worker to keep: whatever a design pass adds."""
+    return sorted(p.relative_to(web_dir).as_posix() for p in web_dir.rglob("*") if p.is_file())
+
+
+class HubServer(ThreadingHTTPServer):
+    """Plain http and HTTPS on one port. A TLS connection always opens with byte 0x16, so
+    the first byte says which, and the field laptop needs no second firewall rule."""
+
+    tls: ssl.SSLContext | None = None
+
+    def finish_request(self, request, client_address) -> None:
+        if self.tls is None:
+            return super().finish_request(request, client_address)
+        try:
+            request.settimeout(PEEK_SECONDS)
+            if request.recv(1, socket.MSG_PEEK) != b"\x16":
+                request.settimeout(None)
+                return super().finish_request(request, client_address)
+            secure = self.tls.wrap_socket(request, server_side=True)
+        except OSError:          # SSLError too: a phone that doesn't trust the CA yet, or gave up
+            return
+        secure.settimeout(None)
+        try:
+            super().finish_request(secure, client_address)
+        finally:
+            secure.close()
+
+
+def make_server(hub: Hub, host: str = "127.0.0.1", port: int = 8765,
+                tls: ssl.SSLContext | None = None) -> HubServer:
     """Port 0 picks a free one (tests); `server_address` says which."""
-    return ThreadingHTTPServer((host, port), partial(Board, hub=hub))
+    server = HubServer((host, port), partial(Board, hub=hub))
+    server.tls = tls
+    return server
 
 
 def lan_address() -> str:

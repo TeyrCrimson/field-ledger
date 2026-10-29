@@ -20,7 +20,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import hub
+from . import hub, qr, tls
 from .classify import build_row, days_between, sort_rows
 from .git_source import is_merged, last_commit, list_branches, run_git
 from .ledger import service, store
@@ -246,6 +246,22 @@ def do_label(argv: list[str], now: Callable[[], datetime]) -> int:
     return 0
 
 
+def start_https(the_hub, address: str):
+    """HTTPS for phones, on the same port: the hub's CA (made once) signs a certificate for
+    the address it has now. Without openssl the board still works, just not offline."""
+    if not tls.available():
+        print("  HTTPS off: `openssl` isn't installed. Phones can use the board, but it won't "
+              "open without the hub (README, \"Phones offline\").")
+        return None
+    folder = tls.ca_dir()
+    if tls.ensure_ca(folder):
+        print(f"  Made this hub's certificate authority in {folder} (keep it off the ledger repo).")
+    tls.issue(folder, [address, "127.0.0.1"])
+    the_hub.ca_cert, the_hub.ca_name = folder / "ca.crt", tls.ca_name(folder)
+    print(f"  HTTPS on the same port, as \"{the_hub.ca_name}\".")
+    return tls.context(folder)
+
+
 def do_serve(argv: list[str]) -> int:
     """`field-ledger serve`: the hub. The board reads from it and writes through it."""
     p = argparse.ArgumentParser(prog="field-ledger serve",
@@ -261,16 +277,20 @@ def do_serve(argv: list[str]) -> int:
     if not store.events_dir(args.ledger_dir).exists():
         print(f"REJECT\n  No ledger at {args.ledger_dir}. Run `fl init <your-name>` first.")
         return 1
-    server = hub.make_server(hub.Hub(args.ledger_dir, args.web_dir, args.db),
-                             "0.0.0.0" if args.lan else "127.0.0.1", args.port)
+    the_hub = hub.Hub(args.ledger_dir, args.web_dir, args.db)
+    server = hub.make_server(the_hub, "0.0.0.0" if args.lan else "127.0.0.1", args.port)
     port = server.server_address[1]
     print(f"Board: http://127.0.0.1:{port}/")
     if args.lan:
         address = hub.lan_address()
+        the_hub.setup_url = f"http://{address}:{port}/setup.html"
         print(f"Phones: http://{address}:{port}/")
         if hub.behind_wsl_nat(address):
             print("  WSL2 is in NAT mode: phones can't reach this address. "
                   "See README, \"The hub\", for the one-time setup.")
+        server.tls = start_https(the_hub, address)
+        print("Add a phone: scan this with its camera (or \"📱 Add a phone\" on the board).")
+        print(qr.terminal(qr.encode(the_hub.setup_url)))
     if not store.read_people(args.ledger_dir):
         print("  No People yet: the first person to open the board adds their name.")
     print("Ctrl-C stops it.")

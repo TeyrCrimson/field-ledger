@@ -556,8 +556,11 @@ function render(always = false) {
 
 async function refresh() {
   try {
-    latest = await getState();
-    layout = await fetch("layout.json", { cache: "no-store" }).then((r) => r.json()).catch(() => layout);
+    // Side by side: with the hub away, each waits out the service worker's limit (sw.js).
+    [latest, layout] = await Promise.all([
+      getState(),
+      fetch("layout.json", { cache: "no-store" }).then((r) => r.json()).catch(() => layout),
+    ]);
     render();
     $("status").textContent = latest.saved
       ? `Can't reach the hub. Showing the space from ${new Date(latest.generated_at).toLocaleTimeString()}.`

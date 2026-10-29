@@ -29,6 +29,7 @@ const HOLD_MS = 300;                                    // a finger holds this l
 const EDGE = 40;                                        // carrying within this of an edge scrolls
 const EDGE_SPEED = 8;                                   // pixels a frame
 const ZOOMS = ["Out", "Normal", "In"];                  // icons at 1×, 2×, 3×
+const BOX_ZOOM = 2;                                     // a box stays at Normal whatever the space's zoom (Teyr)
 const COLOURS = ["green", "blue", "red", "gold", "metal"];
 
 const style = document.createElement("style");
@@ -213,8 +214,8 @@ function renderBox(nodes, pending) {
     onClose: () => openBox(null),
   });
   frame.id = "box";
-  frame.dataset.zoom = zoom;
-  frame.style.setProperty("--z", zoom);
+  frame.dataset.zoom = BOX_ZOOM;
+  frame.style.setProperty("--z", BOX_ZOOM);
   const body = frame.querySelector(".box-body");
   if (path.length > 1) body.append(el("p", "path", `in ${path.slice(0, -1).reverse().join(", in ")}`));
   const status = statusOf(open, nodes, pending);
@@ -336,6 +337,7 @@ function onPress(event) {
   const spotNode = source.closest(".spot");
   const start = isLocation ? [spotNode.offsetLeft, spotNode.offsetTop] : null;
   let ghost = null, over = null, flipTimer = null, edge = null, edgeLoop = 0, at = [x0, y0];
+  let parked = false;
   let lifted = event.pointerType !== "touch";
   const holdTimer = lifted ? 0 : setTimeout(() => {
     lifted = true;
@@ -354,7 +356,7 @@ function onPress(event) {
     }
     if (flipper && !flipTimer) {
       flipper.classList.add("armed");
-      flipTimer = setTimeout(() => { flipTimer = null; flip(Number(flipper.dataset.flip)); }, FLIP_MS);
+      flipTimer = setTimeout(() => { flipTimer = null; park(); flip(Number(flipper.dataset.flip)); }, FLIP_MS);
     } else if (!flipper && flipTimer) {
       clearTimeout(flipTimer);
       flipTimer = null;
@@ -396,6 +398,15 @@ function onPress(event) {
     ghost.style.transform = `translate(${step.clientX}px, ${step.clientY}px)`;
     hover(step.clientX, step.clientY);
   };
+  // A finger's events go to the element it first touched, wherever it moves. A flip redraws
+  // the space and the box, which would take that element off the page and the drag with it
+  // (Teyr's S25+: carry, flip, drop failed; a mouse was fine). So it waits, hidden, on the page.
+  const park = () => {
+    if (parked) return;
+    parked = true;
+    source.style.display = "none";
+    document.body.append(source);
+  };
   // Once lifted, the finger carries the item: the page mustn't scroll under it.
   const hold = (touch) => { if (lifted) touch.preventDefault(); };
   const quit = () => {
@@ -409,6 +420,7 @@ function onPress(event) {
     source.classList.remove("lifted");
     over?.classList.remove("drop-over");
     ghost?.remove();
+    if (parked) source.remove();
     document.querySelectorAll(".flip.armed").forEach((b) => b.classList.remove("armed"));
   };
   const end = (up) => {

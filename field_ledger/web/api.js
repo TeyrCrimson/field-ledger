@@ -98,9 +98,15 @@ export async function getState() {
     away = true;
     throw new Offline("Can't reach the hub.");
   }
-  away = false;
+  away = response.headers.has("X-Saved-Copy");          // the service worker's copy: no hub
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
+  return { ...(await response.json()), saved: away };
+}
+
+// What "Add a phone" shows (the QR code and its address), or null: the hub isn't on the LAN.
+export async function phoneSetup() {
+  const response = await fetch("phone-setup.json", { cache: "no-store" }).catch(() => null);
+  return response?.ok ? response.json() : null;
 }
 
 // A write without its stamp, so two taps of the same move compare equal.

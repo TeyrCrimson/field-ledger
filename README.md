@@ -236,7 +236,7 @@ hand over, except that anyone may claim ownership once a nudge has gone unanswer
 |---|---|
 | **Network** | A travel router (preferred) or a phone hotspot. Laptops join as normal clients. Don't use a laptop hotspot |
 | **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation). **v0**: serves the board and takes its writes, including ones that waited on a phone (see "The hub" below) |
-| **Phones** | Open the board in a browser and add it to the home screen. Moves queue on the phone if the hub is unreachable and send when it's back. **v0**: while the board is open (see "Phones offline") |
+| **Phones** | Open the board in a browser and add it to the home screen. Moves queue on the phone if the hub is unreachable and send when it's back. **v0**: yes; and on a phone added by QR code the board opens with no hub too (see "Phones offline") |
 | **Relay** | When phones can't reach the hub (company or public Wi-Fi, or no hub on site), moves go through the Telegram bot. The hub fetches them over outbound HTTPS. The bot carries moves; it is never the record |
 | **Backup** | The hub pushes the ledger repo when it has internet |
 
@@ -288,10 +288,33 @@ dropped. It goes on **Needs a look** at the top of the board, for anyone to sett
 Each one is a file in the ledger repo, `needs-a-look/<event-id>.json`, committed when it
 arrives. Settling writes who settled it, when, and how into the file, and the file stays.
 
-**The plain http limit.** Waiting writes live in the browser's storage, so they survive closing
-the tab, but clearing the browser's data loses them. The board itself only opens while the hub
-is reachable. Opening it offline needs a service worker, and browsers allow those only on HTTPS
-(or localhost), so keep the board open in the field. An HTTPS hub is **planned**.
+Waiting writes live in the browser's storage, so they survive closing the tab; clearing the
+browser's data loses them.
+
+**Adding a phone** (once per phone, about a minute). For the board to open with no hub, the
+phone must use it over HTTPS: browsers only keep a page working offline on a secure page. The
+hub has its own certificate authority for that, and joining works like linking WhatsApp to a
+computer:
+
+1. On the laptop, tap **📱 Add a phone** (or use the QR code `serve --lan` prints).
+2. Point the phone's camera at the code and open the link.
+3. The phone shows three steps for its own kind (Android or iPhone): get the hub's certificate,
+   trust it in Settings (a web page isn't allowed to do that part), and a check that turns
+   green by itself. Then **Open the board**, and add it to the home screen.
+
+After that, the board opens on that phone with no hub, showing the last board it saw and saying
+so ("Showing the board from 14:32"). A phone that skips the setup still uses the board over
+plain http, as long as the hub is reachable.
+
+**The hub's certificate authority.** `serve --lan` makes it once, in
+`~/.local/share/field-ledger/hub-ca/` (never in the ledger repo), and signs the hub a fresh
+certificate for its current address on every start, so the travel router and a phone hotspot
+both work. It can only vouch for private network addresses (192.168.x, 10.x, 172.16–31.x),
+so a phone that trusts it can't be fooled about any site on the internet. Its name says which
+laptop made it and when (`field-ledger hub DESKTOP-1 2026-10`); the setup page shows it, and
+how to remove any other, older "field-ledger hub" certificate. http and HTTPS share the one
+port, so the firewall setup below doesn't change. It needs the `openssl` command (Ubuntu and
+WSL have it); without it the hub says "HTTPS off" and phones use plain http.
 
 **Which kinds hold things.** Only a container kind can have things packed into its items: a case,
 a van, a drone a build is deployed onto. A kind holds nothing until someone says so, in the kit
@@ -343,7 +366,9 @@ and style; `board.js` wires them up and `api.js` does the writes. A design pass 
 
 1. Stop the old hub if it's still running (only one hub may poll the bot).
 2. On another laptop: clone the ledger repo (from its remote, or a USB `git bundle`).
-3. Copy the bot token file (see "Secrets").
+3. Copy the bot token file (see "Secrets"), and the hub's certificate authority
+   (`~/.local/share/field-ledger/hub-ca/`) if phones should keep working without being set up
+   again.
 4. Run `field-ledger serve`. Phones send their queued moves; the bot hands over anything it held.
 
 Telegram keeps relayed moves for 24 hours. After that, recover them from a chat export with
@@ -564,8 +589,10 @@ Never commit them. Copying the token file is part of takeover.
 | `ledger/service.py` | Validate, then write | no |
 | `ledger/cli.py` | `fl` command; opening a ledger, shared with code mode | no |
 | `cli.py` | `field-ledger` command: board, `show`, `deploy`, `label`, `undo`, `serve` | no |
-| `hub.py` | The hub: `/state.json`, the web front end, and the board's writes (`/api/*`) | no |
-| `web/` | The board: `tokens.css`, `components/*.js`, `board.js`, `api.js`. No build step | (front end) |
+| `hub.py` | The hub: `/state.json`, the web front end, the board's writes (`/api/*`), http and HTTPS on one port | no |
+| `tls.py` | The hub's certificate authority and certificate (runs `openssl`) | no |
+| `qr.py` | QR codes for "Add a phone" | yes |
+| `web/` | The board: `tokens.css`, `components/*.js`, `board.js`, `api.js`, `sw.js` (offline), `setup.html`/`setup.js` (adding a phone). No build step | (front end) |
 
 ## Tests
 

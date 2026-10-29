@@ -74,6 +74,10 @@ security labels from a scanner (set by hand for now).
   flag; replay counts each event at min(occurred_at, recorded_at); undo's window starts at
   recorded_at. A queued write the hub would refuse or ask about goes to
   `needs-a-look/<id>.json` in the ledger repo, settled in place (log / dismiss), never dropped.
+- **Phones over HTTPS:** `serve --lan` serves http and HTTPS on one port (first byte decides). The
+  hub's CA lives in `~/.local/share/field-ledger/hub-ca/` (never the ledger repo), is limited to
+  private IPs, and signs a hub certificate for the current address on each start. Phones join by
+  QR code (`setup.html`); `sw.js` keeps the board openable offline. Needs `openssl`.
 - **Derived state** (code mode): branch age and last commit from local Git, always, offline.
 
 ## Settings (defaults)
@@ -91,7 +95,7 @@ security labels from a scanner (set by hand for now).
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install pytest
-.venv/bin/python -m pytest -q      # all green; the count only grows (188 on 2026-10-28)
+.venv/bin/python -m pytest -q      # all green; the count only grows (210 on 2026-10-29)
 ```
 
 - Every change keeps the whole suite green and adds tests for its own behaviour.

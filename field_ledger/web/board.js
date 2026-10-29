@@ -10,9 +10,11 @@
 // on reconnect, on each refresh, after each write. One the hub won't log as it arrives lands
 // on Needs a look for a person to settle. Every write shows at once that it was taken,
 // on its card and in a toast, so nobody taps it again to be sure.
-import { CAN_WAIT, Offline, flush, getState, me, post, send, setName, unsynced, waiting } from "./api.js";
+import { CAN_WAIT, Offline, flush, getState, me, phoneSetup, post, send, setName, unsynced,
+         waiting } from "./api.js";
 import { actionBar, css as actionCss } from "./components/actionbar.js";
 import { addDialog, css as addCss } from "./components/add-form.js";
+import { addPhoneDialog, css as addPhoneCss } from "./components/add-phone.js";
 import { column, css as columnCss } from "./components/column.js";
 import { confirmDialog, css as confirmCss } from "./components/confirm.js";
 import { button, describeWrite, dialogCss } from "./components/dom.js";
@@ -27,7 +29,7 @@ const TOAST_MS = 15_000;
 
 const style = document.createElement("style");
 style.textContent = [dialogCss, columnCss, cardCss, actionCss, addCss, confirmCss, peopleCss,
-                     toastCss, needsCss, unsyncedCss].join("\n");
+                     toastCss, needsCss, unsyncedCss, addPhoneCss].join("\n");
 document.head.append(style);
 
 let latest = { places: [], nodes: [], people: [], needs_look: [] };
@@ -222,7 +224,14 @@ function renderHeader() {
     button(me.name ? `You: ${me.name}` : "Who are you?", "", () => pickName(false)),
     button("+ Add items", "", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))),
     button("Undo my last", "", () => act("undo")),
+    button("📱 Add a phone", "", addPhone),
   );
+}
+
+async function addPhone() {
+  const setup = await phoneSetup();
+  if (setup) return showDialog(addPhoneDialog(setup));
+  say("Phones join a hub started with `field-ledger serve --lan`.", { error: true });
 }
 
 // The hub answered, so anything waiting goes now; if some did, read the board again.
@@ -230,6 +239,11 @@ async function refresh() {
   try {
     latest = await getState();
     render();
+    if (latest.saved) {
+      $("status").textContent = "Can't reach the hub. Showing the board from "
+                              + `${new Date(latest.generated_at).toLocaleTimeString()}.`;
+      return renderHeader();
+    }
     $("status").textContent = held ? "Changes are waiting: drop or cancel the picked card to see them."
                                    : `Updated ${new Date().toLocaleTimeString()}`;
   } catch (error) {
@@ -248,3 +262,5 @@ await refresh();
 if (!me.name || !latest.people.includes(me.name)) pickName(true);
 setInterval(refresh, REFRESH_MS);
 window.addEventListener("online", refresh);
+// Opens the board with no hub (sw.js). Only on a secure page; elsewhere this is undefined.
+navigator.serviceWorker?.register("sw.js").catch(() => { /* the board works without it */ });

@@ -9,17 +9,16 @@ const CHECK_MS = 2_000;
 
 const css = `
 .setup { max-width: 34rem; margin: 0 auto; padding: var(--space) var(--space) 3rem; }
-.setup h1 { margin: var(--space) 0 0.25rem; font-size: 1.4rem; }
+.setup h1 { margin: var(--space) 0 0.25rem; font-size: 1.6rem; }
 .setup .lead { margin: 0 0 var(--space); color: var(--muted); }
 .setup .step {
   display: grid;
   grid-template-columns: 2.5rem 1fr;
   gap: var(--space);
-  margin-top: var(--space);
+  margin: calc(var(--space) + 3 * var(--px)) calc(2 * var(--px)) 0;
   padding: var(--space);
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  box-shadow: var(--frame);
 }
 .setup .number {
   display: grid;
@@ -27,11 +26,14 @@ const css = `
   width: 2.5rem;
   height: 2.5rem;
   color: var(--on-accent);
-  background: var(--accent);
-  border-radius: 50%;
+  background: var(--trim);
+  box-shadow: inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 rgb(0 0 0 / 0.25);
+  font-family: var(--pixel);
+  font-size: 1.2rem;
   font-weight: 700;
 }
 .setup .step.done .number { background: var(--ok); }
+.setup .step.done { --trim: var(--ok); }
 .setup h2 { margin: 0.4rem 0 0.25rem; font-size: 1.05rem; }
 .setup p, .setup li { margin: 0.25rem 0; line-height: 1.4; }
 .setup ol { margin: 0.25rem 0; padding-left: 1.2em; }
@@ -44,7 +46,9 @@ const css = `
   padding: 0 calc(var(--space) * 1.5);
   color: var(--on-accent);
   background: var(--accent);
-  border-radius: var(--radius);
+  box-shadow: 0 calc(-1 * var(--px)) 0 var(--outline), 0 var(--px) 0 var(--outline),
+              calc(-1 * var(--px)) 0 0 var(--outline), var(--px) 0 0 var(--outline);
+  font-family: var(--pixel);
   font-weight: 600;
   text-decoration: none;
 }

@@ -7,6 +7,7 @@ Usage:
     python -m field_ledger label feat/x CRIT exposes the CDR port
     python -m field_ledger undo
     python -m field_ledger serve --lan
+    python -m field_ledger hub-ca export casio-ca.p12
     python -m field_ledger --repo ~/github-repos/casio-edge --base origin/develop --prs gh
 
 `deploy` and `undo` write to the same ledger as `fl`, through the same service layer.
@@ -14,10 +15,14 @@ Usage:
 
 import argparse
 import os
+import re
+import shutil
+import subprocess
 import sys
 from dataclasses import replace
 from collections.abc import Callable
 from datetime import datetime, timezone
+from getpass import getpass
 from pathlib import Path
 
 from . import hub, qr, tls
@@ -262,6 +267,82 @@ def start_https(the_hub, address: str):
     return tls.context(folder)
 
 
+def do_hub_ca(argv: list[str]) -> int:
+    """`field-ledger hub-ca`: the CA phones trust, shared by a team's hub laptops so a phone
+    sets up once for any of them."""
+    p = argparse.ArgumentParser(prog="field-ledger hub-ca",
+                                description="Show this laptop's hub CA, make a team's, or carry "
+                                            "it to another hub laptop.")
+    p.add_argument("action", nargs="?", choices=["new", "export", "import"])
+    p.add_argument("arg", nargs="?", help="new: the team name; export / import: the file")
+    p.add_argument("--replace", action="store_true",
+                   help="new / import: replace this laptop's CA (its phones set up again)")
+    args = p.parse_args(argv)
+    if not tls.available():
+        print("REJECT\n  The hub CA needs the `openssl` command.")
+        return 1
+    folder = tls.ca_dir()
+    have = (folder / "ca.crt").exists()
+    if args.action and not args.arg:
+        p.error(f"{args.action} needs {'a team name' if args.action == 'new' else 'a file'}")
+    if args.action is None or args.action == "export":
+        if not have:
+            print("No hub CA on this laptop yet: `field-ledger hub-ca new <team>` makes one "
+                  "(`serve --lan` makes one without a team).")
+            return 1 if args.action else 0
+        if args.action is None:
+            print(f"\"{tls.ca_name(folder)}\", until {tls.ca_expires(folder)}, in {folder}")
+            return 0
+        return export_ca(folder, Path(args.arg))
+    if have and not args.replace:
+        print(f"REJECT\n  This laptop already has \"{tls.ca_name(folder)}\". --replace swaps it; "
+              "phones set up for it then set up again.")
+        return 1
+    if args.action == "new":
+        if not re.fullmatch(r"[\w -]{1,30}", args.arg):
+            print("REJECT\n  A team name is up to 30 letters, digits, spaces or hyphens.")
+            return 1
+        old = have and tls.ca_name(folder)
+        shutil.rmtree(folder, ignore_errors=True)
+        tls.ensure_ca(folder, args.arg)
+    else:
+        staging = folder.with_name("hub-ca.import")
+        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            tls.unpack(Path(args.arg), getpass("Passphrase: "), staging)
+        except ValueError as error:
+            shutil.rmtree(staging)
+            print(f"REJECT\n  {error}.")
+            return 1
+        old = have and tls.ca_name(folder)
+        if have and (staging / "ca.crt").read_bytes() == (folder / "ca.crt").read_bytes():
+            shutil.rmtree(staging)
+            print(f"\"{old}\" is already this laptop's CA.")
+            return 0
+        shutil.rmtree(folder, ignore_errors=True)
+        staging.rename(folder)
+    print(f"✓ \"{tls.ca_name(folder)}\", until {tls.ca_expires(folder)}, in {folder}")
+    if old:
+        print(f"  Phones set up for \"{old}\" must remove it and scan the hub's QR code again.")
+    return 0
+
+
+def export_ca(folder: Path, out: Path) -> int:
+    inside_repo = subprocess.run(["git", "-C", str(out.resolve().parent), "rev-parse"],
+                                 capture_output=True).returncode == 0
+    if inside_repo:
+        print(f"REJECT\n  {out} is inside a Git repo; the CA's key never goes in one.")
+        return 1
+    passphrase = getpass("Passphrase for the file: ")
+    if not passphrase or passphrase != getpass("Again: "):
+        print("REJECT\n  The passphrase was empty or didn't match.")
+        return 1
+    tls.export(folder, out, passphrase)
+    print(f"✓ \"{tls.ca_name(folder)}\" → {out}. On the other laptop: "
+          f"`field-ledger hub-ca import {out.name}`, with the same passphrase.")
+    return 0
+
+
 def do_serve(argv: list[str]) -> int:
     """`field-ledger serve`: the hub. The board reads from it and writes through it."""
     p = argparse.ArgumentParser(prog="field-ledger serve",
@@ -327,6 +408,8 @@ def main(argv: list[str] | None = None, ask: Ask = ask_tty,
         return do_label(argv[1:], now)
     if argv and argv[0] == "serve":
         return do_serve(argv[1:])
+    if argv and argv[0] == "hub-ca":
+        return do_hub_ca(argv[1:])
     if argv and argv[0] == "undo":
         return do_undo(argv[1:], now)
     args = parse_args(argv)

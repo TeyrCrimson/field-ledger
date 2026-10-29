@@ -8,14 +8,15 @@
 // the same rules as `fl`: refused, asked (a confirm), or logged (a readback with Undo).
 // With no hub a write waits on the phone ("N unsynced") and goes out when the hub is back:
 // on reconnect, on each refresh, after each write. One the hub won't log as it arrives lands
-// on Needs a look for a person to settle.
-import { CAN_WAIT, flush, me, post, send, setName, unsynced } from "./api.js";
+// on Needs a look for a person to settle. Every write shows at once that it was taken,
+// on its card and in a toast, so nobody taps it again to be sure.
+import { CAN_WAIT, Offline, flush, getState, me, post, send, setName, unsynced, waiting } from "./api.js";
 import { actionBar, css as actionCss } from "./components/actionbar.js";
 import { addDialog, css as addCss } from "./components/add-form.js";
 import { column, css as columnCss } from "./components/column.js";
 import { confirmDialog, css as confirmCss } from "./components/confirm.js";
 import { button, describeWrite, dialogCss } from "./components/dom.js";
-import { itemCard, css as cardCss } from "./components/item-card.js";
+import { itemCard, markCard, unmarkCard, css as cardCss } from "./components/item-card.js";
 import { needsLook, css as needsCss } from "./components/needs-look.js";
 import { peoplePicker, css as peopleCss } from "./components/people.js";
 import { toast, css as toastCss } from "./components/toast.js";
@@ -46,20 +47,32 @@ function say(text, options = {}) {
   const node = toast(text, options);
   $("toasts").append(node);
   setTimeout(() => node.remove(), TOAST_MS);
+  return node;
 }
+
+const cardOf = (id) => id && document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
 
 // One write, end to end: no hub → it waits; refused → why; asked → confirm, then again
 // with confirmed (same id and time); logged → the readback, with Undo.
 async function act(command, body = {}) {
+  const what = CAN_WAIT.has(command) ? describeWrite(command, body) : "";
+  const card = what ? cardOf(body.item ?? body.build) : null;
+  const sending = what ? say(`Sending: ${what}…`) : null;
+  if (card) markCard(card, "Sending…");
   let answer;
   try {
     answer = await send(command, body);
   } catch (error) {
     return say(`Not logged: ${error.message}`, { error: true });
+  } finally {
+    sending?.remove();
+    if (card) unmarkCard(card);
   }
-  if (answer.queued) {
-    say(`Waiting for the hub: ${describeWrite(command, answer.body)}. It goes when the hub is back.`);
+  if (answer.repeat || answer.queued) {
+    say(answer.repeat ? `Already on its way: ${what}.`
+                      : `Waiting for the hub: ${what}. It goes when the hub is back.`);
     select(null);
+    render();
     return renderHeader();
   }
   if (answer.verdict === "CONFIRM") {
@@ -83,9 +96,9 @@ function arrived(command, body, answer) {
   const what = describeWrite(command, body);
   if (answer.held) {
     say(`Needs a look: ${what}. ${answer.messages.join(" ")}`, { error: true });
-  } else if (answer.event && answer.readback) {
-    say(`Sent: ${answer.readback}`);
-  } else if (!answer.event) {
+  } else if (answer.event) {
+    say(`Sent: ${answer.readback || what}`);    // no readback: it had already landed
+  } else {
     say(`Not logged: ${what}. ${answer.messages.join(" ")}`, { error: true });
   }
 }
@@ -112,8 +125,9 @@ function select(id) {
   if (!id && held) render();
 }
 
-function cardFor(node) {
+function cardFor(node, pending) {
   const card = itemCard(node);
+  if (pending.has(node.id)) markCard(card, `Waiting for the hub: ${pending.get(node.id)}`);
   card.dataset.id = node.id;
   card.tabIndex = 0;
   card.setAttribute("role", "button");
@@ -130,12 +144,14 @@ function cardFor(node) {
 function render() {
   held = Boolean(selected);
   if (held) return;
+  const pending = new Map(waiting().map(({ command, body }) =>
+    [body.item ?? body.build, describeWrite(command, body)]));
   const byPlace = new Map(latest.places.map((place) => [place, []]));
   for (const node of latest.nodes) {
     if (node.location) byPlace.get(node.location).push(node);   // a place itself has none
   }
   const columns = [...byPlace].map(([place, nodes]) => {
-    const section = column(place, nodes.map(cardFor));
+    const section = column(place, nodes.map((node) => cardFor(node, pending)));
     section.dataset.place = place;
     return section;
   });
@@ -212,14 +228,13 @@ function renderHeader() {
 // The hub answered, so anything waiting goes now; if some did, read the board again.
 async function refresh() {
   try {
-    const response = await fetch("state.json", { cache: "no-store", signal: AbortSignal.timeout(8_000) });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    latest = await response.json();
+    latest = await getState();
     render();
     $("status").textContent = held ? "Changes are waiting: drop or cancel the picked card to see them."
                                    : `Updated ${new Date().toLocaleTimeString()}`;
   } catch (error) {
-    $("status").textContent = `Can't reach the hub (${error.message}). Showing the last board.`;
+    $("status").textContent = (error instanceof Offline ? error.message
+                               : `Can't read the board (${error.message}).`) + " Showing the last board.";
     return renderHeader();
   }
   const sent = await flush(arrived);

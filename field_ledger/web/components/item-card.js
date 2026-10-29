@@ -25,6 +25,8 @@ export const css = `
 .sec-med { color: var(--sec-med); }
 .sec-low { color: var(--sec-low); }
 .sec-na { color: var(--sec-na); }
+.card.pending { border: 2px dashed var(--accent); }
+.card .pending-note { color: var(--accent); font-weight: 600; }
 `;
 
 export function itemCard(node) {
@@ -41,4 +43,16 @@ export function itemCard(node) {
   if (node.conflict) card.append(el("p", "warn", `⚠ or ${node.conflict.other}`));
   if (node.last) card.title = `Last: ${node.last.by}, ${new Date(node.last.at).toLocaleString()}`;
   return card;
+}
+
+// A write for this card that the hub hasn't logged yet: on its way, or waiting for the hub.
+// Shown on the card itself, where the person is looking, not only in a toast.
+export function markCard(card, text) {
+  card.classList.add("pending");
+  card.append(el("p", "pending-note", text));
+}
+
+export function unmarkCard(card) {
+  card.classList.remove("pending");
+  card.querySelector(".pending-note")?.remove();
 }

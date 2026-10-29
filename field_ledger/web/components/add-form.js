@@ -27,6 +27,9 @@ export function addDialog(places, onAdd) {
   const holds = input({ type: "checkbox" });
   const holdsLabel = el("label", "check");
   holdsLabel.append(holds, " Can hold other things (a case, a van, a drone)");
+  const vehicle = input({ type: "checkbox" });
+  const vehicleLabel = el("label", "check");
+  vehicleLabel.append(vehicle, " It's a vehicle: it carries things and parks at a place");
   at.setAttribute("list", "add-places");
   const known = el("datalist", "");
   known.id = "add-places";
@@ -36,12 +39,13 @@ export function addDialog(places, onAdd) {
   const row = el("div", "row");
   row.append(Object.assign(button("Add", "primary"), { type: "submit" }),
              button("Cancel", "", () => dialog.close()));
-  form.append(grid, field("Name", name), field("Where they are", at), known, holdsLabel, row);
+  form.append(grid, field("Name", name), field("Where they are", at), known, holdsLabel,
+              vehicleLabel, row);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     dialog.close();
     onAdd({ prefix: prefix.value.trim(), count: Number(count.value), name: name.value.trim(),
-            at: at.value.trim(), container: holds.checked });
+            at: at.value.trim(), container: holds.checked, vehicle: vehicle.checked });
   });
   dialog.append(el("h2", "", "Add items"), form);
   return dialog;

@@ -30,6 +30,7 @@ class State:
     aliases: dict[str, str] = field(default_factory=dict)      # old location -> new
     labels: dict[str, str] = field(default_factory=dict)       # build -> security label (SEC)
     containers: set[str] = field(default_factory=set)          # kinds that hold things (settings)
+    vehicles: set[str] = field(default_factory=set)            # kinds that park at a location
     chain_before: dict[str, list[str]] = field(default_factory=dict)  # move id -> item's ancestors then
     carried: dict[str, set[str]] = field(default_factory=dict)  # move id -> every node it moved
     voided: set[str] = field(default_factory=set)

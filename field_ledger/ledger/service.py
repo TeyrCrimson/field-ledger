@@ -64,6 +64,7 @@ def current_state(ctx: Context) -> State:
     """The replay, plus which kinds hold things (a setting, not an event)."""
     state = fold(store.load(ctx.conn))
     state.containers = store.read_containers(ctx.ledger_dir)
+    state.vehicles = store.read_vehicles(ctx.ledger_dir)
     return state
 
 

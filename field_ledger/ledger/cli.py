@@ -170,9 +170,10 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--name", help="group name (defaults to the prefix)")
     add.add_argument("--container", action="store_true",
                      help="this kind can hold other things (a case, a van, a drone)")
-    kind = sub.add_parser("kind", help="whether a kind holds things: 'kind CAS container yes'")
+    kind = sub.add_parser("kind", help="whether a kind holds things, or is a vehicle: "
+                                       "'kind CAS container yes', 'kind VAN vehicle yes'")
     kind.add_argument("prefix")
-    kind.add_argument("what", choices=["container"])
+    kind.add_argument("what", choices=["container", "vehicle"])
     kind.add_argument("value", choices=["yes", "no"])
     move = sub.add_parser("move", help="log a movement")
     move.add_argument("item")
@@ -274,8 +275,11 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
         if not is_prefix(args.prefix):
             print(f"REJECT\n  '{args.prefix}' isn't a kind: 3 letters, e.g. CAS.")
             return 1
-        store.set_container(ctx.ledger_dir, args.prefix.upper(), args.value == "yes")
-        print(f"OK\n  {args.prefix.upper()} {'holds' if args.value == 'yes' else 'does not hold'} things.")
+        prefix, yes = args.prefix.upper(), args.value == "yes"
+        store.set_kind(ctx.ledger_dir, prefix, args.what, yes)
+        print(f"OK\n  {prefix} {'holds' if yes else 'does not hold'} things." if args.what == "container"
+              else f"OK\n  {prefix} {'is' if yes else 'is not'} a vehicle"
+                   + (": it holds things and parks at a location." if yes else "."))
         return 0
     if args.command == "people":
         if args.add and args.name:

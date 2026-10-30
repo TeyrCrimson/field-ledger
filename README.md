@@ -325,6 +325,13 @@ file's `container` column (`yes`/`no`), with `fl add CAS 2 --at truck --containe
 `fl kind CAS container yes|no`, or the board's "+ Add items". Places always hold things;
 builds never do. `fl move BAT-01 BAT-02` is refused: `BAT-02 can't hold things`.
 
+**Vehicles.** A vehicle is a kind marked vehicle (`fl kind VAN vehicle yes`, or "It's a vehicle"
+in "+ Add items"): it holds things without being marked a container, and it parks at a
+location, the last one it was moved to. It never rides inside a case or another vehicle
+(`VAN-01 is a vehicle: it parks at a location, not in VAN-02`). Anything still in a vehicle
+when the day after the move that put it there begins shows as critical (!) on the space, so
+it gets unloaded that day; that's worked out from the move, nothing is written.
+
 **What it serves.** `GET /state.json` is the replayed state: every node with its place, container
 chain and last event; a build's commit and label; any ⚠ with both places; the People list;
 `needs_look`, the held writes nobody has settled.
@@ -339,6 +346,20 @@ committer. `GET /` is the board from `field_ledger/web/`: plain files, no build 
 `tokens.css` holds colours, spacing and type; each file in `components/` carries its own markup
 and style; `board.js` wires them up and `api.js` does the writes. A design pass swaps the files;
 `/state.json` and the API are the contract it must keep.
+
+**The space (prototype).** `/space.html` is the board's next shape, beside today's: locations
+as icons laid out freely, vehicles parked beside them, each with its name and a status (✓ all
+good, ? needs a look, ! critical: a ⚠, a CRIT label, kit left in a vehicle). Tap one and it
+slides to the left edge as its box opens: what's in it, with items that look the same stacked
+(same kind, colour and name) unless one needs a look. Tap an item for its menu (Move to,
+Colour, Details), a stack to spread it, a case to open it. Drag an item onto a case, a place,
+a vehicle or the box; hold it over ◀ ▶ to flip places while carrying it. Drag a location to
+rearrange the space, or a vehicle onto another location to drive it there. Three zooms (Out,
+Normal, In: icons at 1×, 2×, 3×) and the rest are in **Menu**. Where each location sits and
+each icon's colour live in `layout.json` in the ledger repo (`GET /layout.json`,
+`POST /api/layout {positions: {place: [x, y]}, colours: {id: green|blue|red|gold|metal|null}}`):
+shared by the team, committed, and never an event, so moving an icon never moves anything.
+The layout needs the hub; moves wait offline as on the board.
 
 **The look.** Pixel art, drawn for this board: one small palette (day and night, following the
 phone's setting), framed panels, a ▶ pointer on the picked card, and readbacks in a text box

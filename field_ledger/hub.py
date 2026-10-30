@@ -44,7 +44,7 @@ from .ledger.ids import canonical_location, is_prefix
 from .ledger.kit import Group, plan_more
 from .ledger.model import Kind, Move, Verdict
 from .ledger.state import State, ancestors, deployed_sha, fold, location_of
-from .ledger.validate import holds_things
+from .ledger.validate import holds_things, is_vehicle
 
 WEB_DIR = Path(__file__).parent / "web"
 TYPES = {".html": "text/html", ".css": "text/css", ".js": "text/javascript",
@@ -86,7 +86,8 @@ def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
         chain = ancestors(state, node)                     # parent first, place last
         entry = {"id": node, "group": group, "fixed": node in state.fixed,
                  "parent": chain[0] if chain else "", "location": chain[-1] if chain else "",
-                 "chain": chain, "container": holds_things(node, state)}
+                 "chain": chain, "container": holds_things(node, state),
+                 "vehicle": is_vehicle(node, state)}
         if group == "build":
             entry |= {"sha": deployed_sha(state, node), "label": state.labels.get(node, "")}
         if node in open_:
@@ -106,6 +107,7 @@ def board_state(ledger_dir: Path, now: datetime | None = None) -> dict:
     device, nothing written."""
     state = fold(store.read_events(ledger_dir))
     state.containers = store.read_containers(ledger_dir)
+    state.vehicles = store.read_vehicles(ledger_dir)
     return snapshot(state, service.open_conflicts(state), now or utc_now(),
                     store.read_people(ledger_dir), store.needs_a_look(ledger_dir))
 
@@ -202,6 +204,8 @@ def api_add(ctx: service.Context, body: dict) -> dict:
     name = text(body, "name", required=False) or prefix.upper()
     if body.get("container") is True:
         store.set_container(ctx.ledger_dir, prefix.upper(), True)
+    if body.get("vehicle") is True:
+        store.set_kind(ctx.ledger_dir, prefix.upper(), "vehicle", True)
     written = service.add_items(ctx, plan_more(Group(prefix.upper(), name, count, at),
                                                service.current_state(ctx)), body.get("id"))
     ids = f"{written[0].item}" + (f"..{written[-1].item}" if len(written) > 1 else "")
@@ -218,6 +222,29 @@ def api_people(hub: Hub, body: dict) -> dict:
     name = store.add_person(hub.ledger_dir, text(body, "name", limit=40))
     return {"verdict": "ACCEPT", "messages": [], "event": None, "readback": f"Hello, {name}.",
             "name": name, "people": store.read_people(hub.ledger_dir)}
+
+
+COLOURS = ("green", "blue", "red", "gold", "metal")    # icons.js ramps an icon can swap to
+
+
+def api_layout(hub: Hub, body: dict) -> dict:
+    """Move a location on the space, or give an icon its colour (null: back to its own).
+    Merged into the shared layout file; not an event, so it never changes where anything is."""
+    layout = store.read_layout(hub.ledger_dir)
+    positions, colours = body.get("positions", {}), body.get("colours", {})
+    if not isinstance(positions, dict) or not isinstance(colours, dict):
+        raise BadRequest("'positions' and 'colours' must be objects.")
+    for name, at in positions.items():
+        if (len(name) > 80 or not isinstance(at, list) or len(at) != 2
+                or not all(isinstance(v, int) and 0 <= v <= 20_000 for v in at)):
+            raise BadRequest(f"Position for '{name[:80]}' must be [x, y], whole numbers 0-20000.")
+    for node, colour in colours.items():
+        if len(node) > 80 or colour not in (*COLOURS, None):
+            raise BadRequest(f"Colour for '{node[:80]}' must be one of {', '.join(COLOURS)}, or null.")
+    layout["positions"] |= positions
+    layout["colours"] = {k: v for k, v in (layout["colours"] | colours).items() if v}
+    store.write_layout(hub.ledger_dir, layout, "layout: " + ", ".join([*positions, *colours])[:60])
+    return {"layout": layout}
 
 
 def person(hub: Hub, body: dict) -> str:
@@ -251,6 +278,8 @@ def write(hub: Hub, command: str, body: dict) -> dict:
         return api_people(hub, body)
     if command == "settle":
         return api_settle(hub, body)
+    if command == "layout":
+        return api_layout(hub, body)
     queued = body.get("queued") is True
     event_id = phone_id(body, required=queued)
     if event_id and store.event_file(hub.ledger_dir, event_id).exists():
@@ -327,6 +356,8 @@ class Board(BaseHTTPRequestHandler):
             return self.send(HTTPStatus.OK, "application/x-x509-ca-cert",
                              self.hub.ca_cert.read_bytes(),
                              {"Content-Disposition": 'attachment; filename="field-ledger-hub.crt"'})
+        if path == "/layout.json":
+            return self.send_json(HTTPStatus.OK, store.read_layout(self.hub.ledger_dir))
         if path == "/web-files.json":
             return self.send_json(HTTPStatus.OK, web_files(self.hub.web_dir))
         root = self.hub.web_dir.resolve()
@@ -338,7 +369,7 @@ class Board(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         command = self.path.split("?", 1)[0].removeprefix("/api/")
-        if command not in WRITES and command not in ("people", "settle"):
+        if command not in WRITES and command not in ("people", "settle", "layout"):
             return self.send(HTTPStatus.NOT_FOUND, "text/plain", b"not found")
         try:
             length = int(self.headers.get("Content-Length") or 0)

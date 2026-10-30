@@ -19,5 +19,5 @@ def test_every_sprite_is_whole():
     run = subprocess.run(["node", "--input-type=module", "-e", check], cwd=hub.WEB_DIR,
                          capture_output=True, text=True, check=True)
     found = json.loads(run.stdout)
-    assert {"BAT", "CAM", "CAS", "build", "phone"} <= set(found)
+    assert {"BAT", "CAM", "CAS", "build", "phone", "place", "VAN"} <= set(found)
     assert found == {kind: [] for kind in found}

@@ -140,6 +140,7 @@ def merge(conn: sqlite3.Connection, other: Path) -> int:
 DEFAULT_LEDGER_DIR = Path("ledger")
 EVENTS_DIR = "events"
 SETTINGS_FILE = "settings.json"
+LAYOUT_FILE = "layout.json"
 # ponytail: one key so far; id_digits, undo_minutes etc. move here when they become settable
 DEFAULT_SETTINGS = {"build_home": "hq"}
 
@@ -194,21 +195,51 @@ def write_setting(ledger_dir: Path, key: str, value: str) -> None:
     commit_settings(ledger_dir, {**stored_settings(ledger_dir), key: value}, f"set {key} = {value}")
 
 
+def kinds_with(ledger_dir: Path, flag: str) -> set[str]:
+    kinds = stored_settings(ledger_dir).get("kinds", {})
+    return {prefix for prefix, kind in kinds.items() if kind.get(flag)}
+
+
 def read_containers(ledger_dir: Path) -> set[str]:
     """Kinds (3-letter prefixes) whose items can hold other things: a case, a van, a drone.
-    A kind nobody has set can't: a battery is never a place to put things."""
-    kinds = stored_settings(ledger_dir).get("kinds", {})
-    return {prefix for prefix, kind in kinds.items() if kind.get("container")}
+    A kind nobody has set can't: a battery is never a place to put things. A vehicle
+    always can."""
+    return kinds_with(ledger_dir, "container") | kinds_with(ledger_dir, "vehicle")
+
+
+def read_vehicles(ledger_dir: Path) -> set[str]:
+    """Kinds that are vehicles: they hold things, and park at a location."""
+    return kinds_with(ledger_dir, "vehicle")
+
+
+def set_kind(ledger_dir: Path, prefix: str, flag: str, value: bool) -> None:
+    """Mark a kind as a container or a vehicle (`flag`), or not. Committed like a setting."""
+    stored = stored_settings(ledger_dir)
+    kinds = stored.get("kinds", {})
+    if kinds.get(prefix, {}).get(flag, False) == value:
+        return
+    kinds[prefix] = {**kinds.get(prefix, {}), flag: value}
+    commit_settings(ledger_dir, {**stored, "kinds": kinds},
+                    f"kind {prefix}: {flag} {'yes' if value else 'no'}")
 
 
 def set_container(ledger_dir: Path, prefix: str, container: bool) -> None:
-    stored = stored_settings(ledger_dir)
-    kinds = stored.get("kinds", {})
-    if kinds.get(prefix, {}).get("container", False) == container:
-        return
-    kinds[prefix] = {**kinds.get(prefix, {}), "container": container}
-    commit_settings(ledger_dir, {**stored, "kinds": kinds},
-                    f"kind {prefix}: container {'yes' if container else 'no'}")
+    set_kind(ledger_dir, prefix, "container", container)
+
+
+def read_layout(ledger_dir: Path) -> dict:
+    """Where the board draws each location and what colour each icon is. Arrangement, not
+    record: shared by the team (it's in the ledger repo), overwritten freely, never replayed."""
+    path = ledger_dir / LAYOUT_FILE
+    stored = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return {"positions": stored.get("positions", {}), "colours": stored.get("colours", {})}
+
+
+def write_layout(ledger_dir: Path, layout: dict, message: str) -> None:
+    (ledger_dir / LAYOUT_FILE).write_text(json.dumps(layout, indent=2, sort_keys=True) + "\n",
+                                          encoding="utf-8")
+    run_git(ledger_dir, "add", "--", LAYOUT_FILE)
+    run_git(ledger_dir, "commit", "-q", "-m", message)
 
 
 def read_people(ledger_dir: Path) -> list[str]:

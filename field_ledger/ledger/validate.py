@@ -88,6 +88,18 @@ def check_id_destination(raw: str, state: State) -> Verdict | None:
                                   f"kit. A new place?",), ("id-shaped",))
 
 
+def is_vehicle(node: str, state: State) -> bool:
+    item = canonical_item(node)
+    return item is not None and item in state.items and item.split("-")[0] in state.vehicles
+
+
+def check_vehicle(item: str, dst: str, state: State) -> Verdict | None:
+    """A vehicle parks at a location; it never rides in a case or another vehicle."""
+    if not is_vehicle(item, state) or dst not in state.items or dst in state.fixed:
+        return None
+    return Verdict(Kind.REJECT, (f"{item} is a vehicle: it parks at a location, not in {dst}.",))
+
+
 def check_container(dst: str, state: State) -> Verdict | None:
     """Packing BAT-01 into BAT-02 is a slip, not a move: only container kinds hold things."""
     if holds_things(dst, state):
@@ -180,7 +192,8 @@ def validate_move(cmd: Move, actor: str, state: State, now: datetime) -> tuple[s
     if shape and shape.kind == Kind.REJECT:
         return item, shape
     dst = resolve(canonical_destination(cmd.dst, state), state.aliases)
-    stop = (check_container(dst, state) or check_cycle(item, dst, state)
+    stop = (check_container(dst, state) or check_vehicle(item, dst, state)
+            or check_cycle(item, dst, state)
             or check_duplicate(item, dst, actor, state, now))
     if stop:
         return item, stop

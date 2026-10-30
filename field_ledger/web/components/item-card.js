@@ -1,5 +1,6 @@
 // One node on the board: its kind's icon (icons.js), its ID and group, what it's inside, a
-// ⚠ when two devices disagree, and for a build the deployed commit and security label.
+// ⚠ when two devices disagree, its state if its kind has states, and for a build the
+// deployed commit and security label.
 import { icon, kindOf } from "../icons.js";
 import { el } from "./dom.js";
 
@@ -32,6 +33,7 @@ export const css = `
 .card p { margin: 0.25em 0 0; font-size: 0.875rem; }
 .card .inside, .card .build { color: var(--muted); }
 .card .build { font-family: var(--mono); }
+.card .state { float: right; color: var(--muted); font-family: var(--pixel); font-size: 0.8rem; }
 /* The picked card: a ▶ points at it, as in a menu, and its row lights up. The pointer is
    5×9 pixels, stepped with a polygon so it needs no image and takes the text colour. */
 .card { position: relative; }
@@ -70,6 +72,7 @@ export function itemCard(node) {
   if (node.group === "build" && node.label) {
     body.append(el("span", `sec sec-${node.label.toLowerCase()}`, node.label));
   }
+  if (node.state) body.append(el("span", "state", node.state));
   body.append(el("span", "id", node.id), el("span", "group", node.group));
   const inside = node.chain.slice(0, -1);              // chain: parent first, place last
   if (inside.length) body.append(el("p", "inside", `in ${inside.join(" in ")}`));

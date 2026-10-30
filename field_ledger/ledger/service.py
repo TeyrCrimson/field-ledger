@@ -23,7 +23,7 @@ from .parse import ParseError, parse
 from .state import State, conflicts, fold, location_of
 from .validate import (canonical_destination, check_id_destination, combine, node_id,
                        validate_deploy,
-                       validate_label,
+                       validate_label, validate_state,
                        validate_move, validate_rename, validate_resolve, validate_void)
 
 UNDO_WINDOW = timedelta(minutes=10)      # `undo_minutes`, until settings are a thing
@@ -61,9 +61,10 @@ class ImportLine:
 
 
 def current_state(ctx: Context) -> State:
-    """The replay, plus which kinds hold things (a setting, not an event)."""
+    """The replay, plus which kinds hold things and their states (settings, not events)."""
     state = fold(store.load(ctx.conn))
     state.containers = store.read_containers(ctx.ledger_dir)
+    state.kind_states = store.read_kind_states(ctx.ledger_dir)
     return state
 
 
@@ -169,6 +170,16 @@ def submit_label(ctx: Context, branch: str, label: str, reason: str = "",
     if item is None:
         return Outcome(verdict)
     return write(ctx, verdict, "SEC", event_id, (), item=item, dst=label, note=reason)
+
+
+def submit_state(ctx: Context, item: str, value: str, reason: str = "",
+                 event_id: str | None = None) -> Outcome:
+    """STATE: what shape a piece of kit is in (a battery depleted), separate from where it
+    is, so a move never changes a state and a state never moves anything. Latest wins."""
+    item, value, verdict = validate_state(item, value, current_state(ctx))
+    if item is None:
+        return Outcome(verdict)
+    return write(ctx, verdict, "STATE", event_id, (), item=item, dst=value, note=reason)
 
 
 def open_conflicts(state: State, windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS

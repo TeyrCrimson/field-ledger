@@ -29,7 +29,9 @@ class State:
     fixed: set[str] = field(default_factory=set)               # location nodes: hold nodes, rarely move
     aliases: dict[str, str] = field(default_factory=dict)      # old location -> new
     labels: dict[str, str] = field(default_factory=dict)       # build -> security label (SEC)
+    conditions: dict[str, str] = field(default_factory=dict)   # item -> its state (STATE)
     containers: set[str] = field(default_factory=set)          # kinds that hold things (settings)
+    kind_states: dict[str, list[str]] = field(default_factory=dict)  # kind -> its states (settings)
     chain_before: dict[str, list[str]] = field(default_factory=dict)  # move id -> item's ancestors then
     carried: dict[str, set[str]] = field(default_factory=dict)  # move id -> every node it moved
     voided: set[str] = field(default_factory=set)
@@ -111,6 +113,8 @@ def apply(state: State, event: Event) -> None:
         state.aliases[event.src] = event.dst
     elif event.kind == "SEC":           # latest wins; a voided one never gets here
         state.labels[event.item] = event.dst
+    elif event.kind == "STATE":         # where it is and what shape it's in are separate
+        state.conditions[event.item] = event.dst
     state.events.append(event)
 
 

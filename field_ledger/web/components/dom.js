@@ -19,6 +19,7 @@ export function describeWrite(command, body) {
     case "move": return `${body.item} → ${body.to}`;
     case "add": return `+${body.count} ${String(body.prefix).toUpperCase()} at ${body.at}`;
     case "label": return `${body.build}: label ${String(body.label).toUpperCase()}`;
+    case "state": return `${body.item}: ${body.state}`;
     case "resolve": return `${body.item} is in ${body.to}`;
     default: return command;
   }

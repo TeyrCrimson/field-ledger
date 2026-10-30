@@ -1,5 +1,5 @@
 // What you can do with the card you picked: tap a place or another card to move it there,
-// type a place, settle a ⚠, or set a build's security label.
+// type a place, settle a ⚠, set a build's security label, or set an item's state.
 import { button, el } from "./dom.js";
 
 export const css = `
@@ -23,7 +23,7 @@ export const css = `
 .actionbar input { flex: 1; min-width: 8rem; }     /* the rest of its look: dom.js */
 `;
 
-export function actionBar(node, places, { onMove, onResolve, onLabel, onCancel }) {
+export function actionBar(node, places, { onMove, onResolve, onLabel, onState, onCancel }) {
   const bar = el("div", "actionbar");
   bar.append(el("p", "", `${node.id} · ${node.group}`),
              el("p", "hint", "Tap a place, or a case to pack it in. Or type where it went:"));
@@ -54,6 +54,14 @@ export function actionBar(node, places, { onMove, onResolve, onLabel, onCancel }
     row.append(el("p", "hint", "Security label:"));
     for (const label of ["CRIT", "HIGH", "MED", "LOW", "NA"]) {
       row.append(button(label, node.label === label ? "primary" : "", () => onLabel(label)));
+    }
+    bar.append(row);
+  }
+  if (node.states) {                      // only kinds that have states: `fl kind BAT states ...`
+    const row = el("div", "row");
+    row.append(el("p", "hint", "State:"));
+    for (const state of node.states) {
+      row.append(button(state, node.state === state ? "primary" : "", () => onState(state)));
     }
     bar.append(row);
   }

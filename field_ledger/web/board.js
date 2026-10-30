@@ -118,6 +118,7 @@ function select(id) {
     onMove: moveTo,
     onResolve: (place) => act("resolve", { item: node.id, to: place }),
     onLabel: (label) => act("label", { build: node.id, label }),
+    onState: (state) => act("state", { item: node.id, state }),
     onCancel: () => select(null),
   })] : []));
   const bar = $("actionbar").firstElementChild;            // toasts sit above the bar, never on it

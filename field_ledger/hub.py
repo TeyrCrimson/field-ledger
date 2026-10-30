@@ -89,6 +89,9 @@ def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
                  "chain": chain, "container": holds_things(node, state)}
         if group == "build":
             entry |= {"sha": deployed_sha(state, node), "label": state.labels.get(node, "")}
+        states = state.kind_states.get(node.split("-")[0], []) if node not in state.fixed else []
+        if states and group != "build":
+            entry |= {"state": state.conditions.get(node, ""), "states": states}
         if node in open_:
             entry["conflict"] = {"latest": open_[node][0], "other": open_[node][1]}
         last = state.last_event.get(node)
@@ -106,6 +109,7 @@ def board_state(ledger_dir: Path, now: datetime | None = None) -> dict:
     device, nothing written."""
     state = fold(store.read_events(ledger_dir))
     state.containers = store.read_containers(ledger_dir)
+    state.kind_states = store.read_kind_states(ledger_dir)
     return snapshot(state, service.open_conflicts(state), now or utc_now(),
                     store.read_people(ledger_dir), store.needs_a_look(ledger_dir))
 
@@ -191,6 +195,15 @@ def api_label(ctx: service.Context, body: dict) -> dict:
                                  f"was {before.labels.get(e.item, '—')} → {e.dst}"))
 
 
+def api_state(ctx: service.Context, body: dict) -> dict:
+    before = service.current_state(ctx)
+    outcome = service.submit_state(ctx, text(body, "item"), text(body, "state"),
+                                   text(body, "reason", required=False), body.get("id"))
+    e = outcome.event
+    return reply(outcome, e and (f"STATE {e.item} · {before.items.get(e.item, '')} · "
+                                 f"was {before.conditions.get(e.item, '—')} → {e.dst}"))
+
+
 def api_add(ctx: service.Context, body: dict) -> dict:
     """Items created in the field without the CLI: N more of a group, at a place."""
     prefix, at = text(body, "prefix"), canonical_location(text(body, "at"))
@@ -210,7 +223,7 @@ def api_add(ctx: service.Context, body: dict) -> dict:
 
 
 WRITES = {"move": api_move, "undo": api_undo, "resolve": api_resolve, "label": api_label,
-          "add": api_add}
+          "state": api_state, "add": api_add}
 
 
 def api_people(hub: Hub, body: dict) -> dict:

@@ -5,6 +5,7 @@ Exit codes: 0 written/ignored/query ok, 1 rejected, 2 confirmation declined.
 
 import argparse
 import os
+import re
 import sys
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -36,6 +37,8 @@ def describe(e: Event) -> str:
         return f"{e.item}  ⚠ resolved: {e.dst}"
     if e.kind == "SEC":
         return f"{e.item}  security {e.dst}" + (f": {e.note}" if e.note else "")
+    if e.kind == "STATE":
+        return f"{e.item}  state {e.dst}" + (f": {e.note}" if e.note else "")
     return f"location '{e.src}' renamed to '{e.dst}'"
 
 
@@ -95,7 +98,9 @@ def do_where(ctx: service.Context, cmd: Where) -> int:
     held = f" (in {' in '.join(inside)})" if inside else ""
     other = service.open_conflicts(state).get(item, ("", ""))[1]
     flag = f"  ⚠ or {other}" if other else ""
-    print(f"{item}: {location}{held}{flag}\n  last: {render_event(state.last_event[item])}")
+    condition = f" · {state.conditions[item]}" if item in state.conditions else ""
+    print(f"{item}: {location}{held}{condition}{flag}\n"
+          f"  last: {render_event(state.last_event[item])}")
     if other:
         print(f"  Two devices disagree. Settle it: fl resolve {item} <{location} or {other}>")
     return 0
@@ -131,6 +136,40 @@ def do_kit(ctx: service.Context, groups: list[Group], planner) -> int:
     for e in written:
         print(f"  {e.item}  at {e.dst}")
     print(f"OK\n  {len(written)} item(s) added.")
+    return 0
+
+
+STATE_NAME = re.compile(r"[a-z][a-z0-9-]{0,19}$")
+
+
+def do_kind(ctx: service.Context, prefix: str, what: str, values: list[str]) -> int:
+    if what == "container":
+        if values not in (["yes"], ["no"]):
+            print("REJECT\n  Say yes or no: `fl kind CAS container yes`.")
+            return 1
+        store.set_container(ctx.ledger_dir, prefix, values == ["yes"])
+        print(f"OK\n  {prefix} {'holds' if values == ['yes'] else 'does not hold'} things.")
+        return 0
+    states = list(dict.fromkeys(v.lower() for v in values))
+    bad = [s for s in states if not STATE_NAME.match(s)]
+    if not states or bad:
+        print("REJECT\n  States are short words, e.g. `fl kind BAT states ready depleted "
+              "storage damaged`." + (f" Not a state: {', '.join(bad)}." if bad else ""))
+        return 1
+    store.set_kind_states(ctx.ledger_dir, prefix, states)
+    print(f"OK\n  {prefix} states: {' / '.join(states)}")
+    return 0
+
+
+def do_state(ctx: service.Context, item: str, value: str, reason: str) -> int:
+    before = service.current_state(ctx)
+    outcome = service.submit_state(ctx, item, value, reason)
+    if outcome.event is None:
+        return report(outcome)
+    e = outcome.event
+    print(f"STATE {e.item} · {before.items.get(e.item, '')} · "
+          f"was {before.conditions.get(e.item, '—')} → {e.dst}")
+    print(f"  logged: {render_event(e)}")
     return 0
 
 
@@ -170,10 +209,15 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--name", help="group name (defaults to the prefix)")
     add.add_argument("--container", action="store_true",
                      help="this kind can hold other things (a case, a van, a drone)")
-    kind = sub.add_parser("kind", help="whether a kind holds things: 'kind CAS container yes'")
+    kind = sub.add_parser("kind", help="'kind CAS container yes', or a kind's states: "
+                                       "'kind BAT states ready depleted storage damaged'")
     kind.add_argument("prefix")
-    kind.add_argument("what", choices=["container"])
-    kind.add_argument("value", choices=["yes", "no"])
+    kind.add_argument("what", choices=["container", "states"])
+    kind.add_argument("value", nargs="*")
+    condition = sub.add_parser("state", help="what shape an item is in, e.g. 'state BAT-12 depleted'")
+    condition.add_argument("item")
+    condition.add_argument("state")
+    condition.add_argument("reason", nargs="*")
     move = sub.add_parser("move", help="log a movement")
     move.add_argument("item")
     move.add_argument("to", nargs="+")
@@ -274,9 +318,9 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
         if not is_prefix(args.prefix):
             print(f"REJECT\n  '{args.prefix}' isn't a kind: 3 letters, e.g. CAS.")
             return 1
-        store.set_container(ctx.ledger_dir, args.prefix.upper(), args.value == "yes")
-        print(f"OK\n  {args.prefix.upper()} {'holds' if args.value == 'yes' else 'does not hold'} things.")
-        return 0
+        return do_kind(ctx, args.prefix.upper(), args.what, args.value)
+    if args.command == "state":
+        return do_state(ctx, args.item, args.state, " ".join(args.reason))
     if args.command == "people":
         if args.add and args.name:
             print(f"OK\n  {store.add_person(ctx.ledger_dir, ' '.join(args.name))} is on the list.")

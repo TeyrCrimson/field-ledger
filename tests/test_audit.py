@@ -130,6 +130,32 @@ def test_fl_audit_lists_and_writes_nothing(tmp_path, capsys):
     assert run("run", "AUD BAT-01") == 1                    # no typed checks
 
 
+def test_fl_audit_check_walks_the_due_list(tmp_path, capsys):
+    """The terminal's audit screen: the board's three answers, one item at a time."""
+    from ledger_helpers import Clock
+    clock = Clock()
+    db, ledger = str(tmp_path / "l.db"), str(tmp_path / "ledger")
+
+    def run(*argv, answers=()):
+        replies = iter(answers)
+        return fl(["--db", db, "--ledger-dir", ledger, *argv], ask=lambda _: True,
+                  read=lambda _: next(replies), now=clock)
+    assert run("init", "teyr") == 0
+    assert run("add", "BAT", "4", "--at", "truck") == 0
+    clock.advance(days=1)
+    capsys.readouterr()
+    assert run("audit", "--check", answers=["h", "e", "van", "m", "q"]) == 0
+    out = capsys.readouterr().out
+    assert "BAT-01  audit: here (truck)" in out and "BAT-02  audit: logged in truck, found in van" in out
+    assert "BAT-03  audit: logged in truck, found in lost" in out
+    assert "Audit due today: 1\n  truck: BAT-04\nMismatches today: 2\n" in out   # q stopped it
+    state = fold(read_events(tmp_path / "ledger"))
+    assert (location_of(state, "BAT-02"), location_of(state, "BAT-03")) == ("van", "lost")
+    assert run("audit", "--check", answers=["x"]) == 0               # not an answer: skipped
+    assert "Skipped." in capsys.readouterr().out
+    assert location_of(fold(read_events(tmp_path / "ledger")), "BAT-04") == "truck"
+
+
 # --- the board -------------------------------------------------------------------------
 
 def test_state_json_has_the_audit(board):

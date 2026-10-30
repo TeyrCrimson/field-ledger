@@ -47,7 +47,7 @@ security labels from a scanner (set by hand for now).
 - **Location and state change through separate events.** Bulk items are one node with a count.
 - IDs are `KIND-NN`; number width is the `id_digits` setting (default 2).
 - Event types: ADD, MOVE, AUD, SEC, STATE, CFG, RESOLVE, VOID, RENAME, OWNER. AUD is written
-  only from the board's audit screen; found elsewhere puts the node there (a mismatch). STATE is a
+  only from an audit screen (the board's, `fl audit --check`), never typed; found elsewhere puts the node there (a mismatch). STATE is a
   kit item's state from its kind's own list; SEC stays a build's fixed-five label.
 - **Owner handover:** only the current owner writes OWNER, except anyone may claim after a
   nudge has gone unanswered for `nudge_after`.

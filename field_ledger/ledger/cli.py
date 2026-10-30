@@ -22,6 +22,7 @@ from .validate import canonical_destination, node_id, not_found
 TAG = {Kind.ACCEPT: "OK", Kind.WARN: "WARN", Kind.CONFIRM: "CONFIRM",
        Kind.REJECT: "REJECT", Kind.IGNORE: "IGNORED"}
 Ask = Callable[[str], bool]
+Read = Callable[[str], str]
 
 
 # --- rendering -----------------------------------------------------------------
@@ -176,9 +177,41 @@ def do_state(ctx: service.Context, item: str, value: str, reason: str) -> int:
     return 0
 
 
-def do_audit(ctx: service.Context) -> int:
-    """Read only: what today's audit still has to check, and what it found wrong. Checks are
-    written from the board's audit screen, never typed."""
+def walk_audit(ctx: service.Context, due: list[str], read: Read, ask: Ask) -> None:
+    """The terminal's audit screen: one item at a time, the board's three answers. Each check
+    is its own write, so quitting halfway keeps the ones made. A check is still never a typed
+    command: the screen asks about the items that are due, and nothing else."""
+    for item in due:
+        state = service.current_state(ctx)
+        try:
+            answer = read(f"{item} · {state.items[item]} · logged in {location_of(state, item)}: "
+                          "[h]ere, [e]lsewhere, [m]issing, [s]kip, [q]uit? ").strip().lower()[:1]
+            if answer == "q":
+                return
+            found = {"h": "", "m": "lost"}.get(answer)
+            if answer == "e":
+                found = read("  Where was it? ").strip()
+        except EOFError:
+            return
+        if not found and answer != "h":
+            print("  Skipped.")
+            continue
+        outcome = service.submit_audit(ctx, item, found)
+        if outcome.verdict.kind == Kind.CONFIRM:
+            print(render_verdict(outcome.verdict))
+            if ask("  Log it anyway? [y/N] "):
+                outcome = service.submit_audit(ctx, item, found, confirmed=True)
+        if outcome.event is None:
+            print(f"  Not logged: {' '.join(outcome.verdict.messages)}")
+        else:
+            print(f"  logged: {render_event(outcome.event)}")
+
+
+def do_audit(ctx: service.Context, check: bool, read: Read, ask: Ask) -> int:
+    """What today's audit still has to check, and what it found wrong. With --check, walk the
+    due list and check each one, as on the board's audit screen."""
+    if check:
+        walk_audit(ctx, service.audit_report(service.current_state(ctx), ctx.now())[0], read, ask)
     state = service.current_state(ctx)
     due, wrong = service.audit_report(state, ctx.now())
     by_place: dict[str, list[str]] = {}
@@ -191,7 +224,7 @@ def do_audit(ctx: service.Context) -> int:
     for e in wrong:
         print(f"  {render_event(e)}")
     if due:
-        print("Check them on the board: Audit.")
+        print("Check them on the board (Audit) or with `fl audit --check`.")
     return 0
 
 
@@ -253,7 +286,8 @@ def build_parser() -> argparse.ArgumentParser:
     settle = sub.add_parser("resolve", help="settle a ⚠ by confirming one of its two places")
     settle.add_argument("item")
     settle.add_argument("location", nargs="+")
-    sub.add_parser("audit", help="what today's audit still has to check (read only)")
+    audit = sub.add_parser("audit", help="what today's audit still has to check; --check walks it")
+    audit.add_argument("--check", action="store_true", help="check each due item: here, elsewhere or missing")
     sub.add_parser("undo", help="take back your own last command, within 10 minutes")
     people = sub.add_parser("people", help="the names phones pick from; 'people add <name>' adds one")
     people.add_argument("add", nargs="?", choices=["add"])
@@ -321,7 +355,7 @@ def make_context(args: argparse.Namespace, now: Callable[[], datetime]) -> servi
                        args.name if args.command == "init" else None)
 
 
-def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
+def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask, read: Read = input) -> int:
     if args.command == "init":
         store.add_person(ctx.ledger_dir, ctx.actor)          # pickable on a phone too
         print(f"OK\n  ledger: {args.ledger_dir}  cache: {args.db}  device: {ctx.device}  "
@@ -366,7 +400,7 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
     if args.command == "undo":
         return report(service.submit_undo(ctx))
     if args.command == "audit":
-        return do_audit(ctx)
+        return do_audit(ctx, args.check, read, ask)
     if args.command == "flags":
         return do_list(service.flagged_events(service.current_state(ctx)))
     if args.command == "log":
@@ -374,11 +408,11 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
     return execute(ctx, to_command(args), getattr(args, "yes", False), ask)
 
 
-def main(argv: list[str] | None = None, ask: Ask = ask_tty,
+def main(argv: list[str] | None = None, ask: Ask = ask_tty, read: Read = input,
          now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> int:
     args = build_parser().parse_args(argv)
     try:
-        return dispatch(make_context(args, now), args, ask)
+        return dispatch(make_context(args, now), args, ask, read)
     except (ParseError, ValueError) as err:
         print(f"REJECT\n  {err}")
         return 1

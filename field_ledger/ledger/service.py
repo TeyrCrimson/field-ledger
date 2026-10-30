@@ -20,10 +20,10 @@ from .importer import extract_commands, import_ids, repeats
 from .kit import PlannedAdd
 from .model import Event, Kind, Move, Rename, Verdict, Void
 from .parse import ParseError, parse
-from .state import State, conflicts, fold, location_of
+from .state import State, audit_due, conflicts, fold, location_of, mismatches
 from .validate import (canonical_destination, check_id_destination, combine, node_id,
                        validate_deploy,
-                       validate_label, validate_state,
+                       validate_audit, validate_label, validate_state,
                        validate_move, validate_rename, validate_resolve, validate_void)
 
 UNDO_WINDOW = timedelta(minutes=10)      # `undo_minutes`, until settings are a thing
@@ -180,6 +180,32 @@ def submit_state(ctx: Context, item: str, value: str, reason: str = "",
     if item is None:
         return Outcome(verdict)
     return write(ctx, verdict, "STATE", event_id, (), item=item, dst=value, note=reason)
+
+
+def day_start(now: datetime) -> datetime:
+    """A deployment day starts at local midnight on the machine asking (the hub, or the laptop
+    running `fl`). Every day counts, as with kit left in a vehicle."""
+    return now.astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def audit_report(state: State, now: datetime) -> tuple[list[str], list[Event]]:
+    """(what's due, today's mismatches): the audit screen and `fl audit` read the same."""
+    since = day_start(now)
+    return audit_due(state, since), mismatches(state, since)
+
+
+def submit_audit(ctx: Context, item: str, found: str = "", confirmed: bool = False,
+                 event_id: str | None = None) -> Outcome:
+    """AUD: one item checked at the end-of-day audit. Only the board's audit screen writes
+    it (never a typed command), so a check never poses as a move and a move never as a check.
+    Found where the log has it: the location stays. Found elsewhere or missing: it's put
+    there, and it counts as a mismatch."""
+    state = current_state(ctx)
+    item, found, verdict = validate_audit(item, found, state)
+    if item is None or not should_write(verdict, confirmed):
+        return Outcome(verdict)
+    return write(ctx, verdict, "AUD", event_id, (), item=item, src=state.where.get(item, ""),
+                 dst=found)
 
 
 def open_conflicts(state: State, windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS

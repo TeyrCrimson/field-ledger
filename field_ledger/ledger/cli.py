@@ -16,7 +16,7 @@ from .ids import canonical_location, is_prefix
 from .kit import Group, plan_kit, plan_more, read_kit
 from .model import At, Event, Kind, Move, Rename, Verdict, Void, Where
 from .parse import ParseError, parse
-from .state import ancestors, items_at
+from .state import ancestors, items_at, location_of
 from .validate import canonical_destination, node_id, not_found
 
 TAG = {Kind.ACCEPT: "OK", Kind.WARN: "WARN", Kind.CONFIRM: "CONFIRM",
@@ -37,6 +37,9 @@ def describe(e: Event) -> str:
         return f"{e.item}  ⚠ resolved: {e.dst}"
     if e.kind == "SEC":
         return f"{e.item}  security {e.dst}" + (f": {e.note}" if e.note else "")
+    if e.kind == "AUD":
+        return (f"{e.item}  audit: here ({e.dst})" if e.dst == e.src
+                else f"{e.item}  audit: logged in {e.src or '—'}, found in {e.dst}")
     if e.kind == "STATE":
         return f"{e.item}  state {e.dst}" + (f": {e.note}" if e.note else "")
     return f"location '{e.src}' renamed to '{e.dst}'"
@@ -173,6 +176,25 @@ def do_state(ctx: service.Context, item: str, value: str, reason: str) -> int:
     return 0
 
 
+def do_audit(ctx: service.Context) -> int:
+    """Read only: what today's audit still has to check, and what it found wrong. Checks are
+    written from the board's audit screen, never typed."""
+    state = service.current_state(ctx)
+    due, wrong = service.audit_report(state, ctx.now())
+    by_place: dict[str, list[str]] = {}
+    for item in due:
+        by_place.setdefault(location_of(state, item), []).append(item)
+    print(f"Audit due today: {len(due)}")
+    for place, items in sorted(by_place.items()):
+        print(f"  {place}: {', '.join(items)}")
+    print(f"Mismatches today: {len(wrong)}")
+    for e in wrong:
+        print(f"  {render_event(e)}")
+    if due:
+        print("Check them on the board: Audit.")
+    return 0
+
+
 def do_import(ctx: service.Context, path: Path) -> int:
     results = service.import_text(ctx, path.read_text(encoding="utf-8"))
     for r in results:
@@ -231,6 +253,7 @@ def build_parser() -> argparse.ArgumentParser:
     settle = sub.add_parser("resolve", help="settle a ⚠ by confirming one of its two places")
     settle.add_argument("item")
     settle.add_argument("location", nargs="+")
+    sub.add_parser("audit", help="what today's audit still has to check (read only)")
     sub.add_parser("undo", help="take back your own last command, within 10 minutes")
     people = sub.add_parser("people", help="the names phones pick from; 'people add <name>' adds one")
     people.add_argument("add", nargs="?", choices=["add"])
@@ -342,6 +365,8 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
         return 0
     if args.command == "undo":
         return report(service.submit_undo(ctx))
+    if args.command == "audit":
+        return do_audit(ctx)
     if args.command == "flags":
         return do_list(service.flagged_events(service.current_state(ctx)))
     if args.command == "log":

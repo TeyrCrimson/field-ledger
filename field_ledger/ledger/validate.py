@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from .ids import canonical_item, canonical_location, suggest
 from .model import Kind, Move, Rename, Verdict, Void
-from .state import State, ancestors, makes_cycle, resolve
+from .state import LOST, State, ancestors, makes_cycle, resolve
 
 DUPLICATE_WINDOW = timedelta(minutes=2)
 
@@ -230,6 +230,34 @@ def validate_state(raw: str, value: str, state: State) -> tuple[str | None, str,
         return None, "", Verdict(Kind.REJECT, (f"'{value}' is not a {kind} state. Use one of "
                                                f"{' / '.join(states)}.",))
     return item, value, Verdict(Kind.ACCEPT)
+
+
+def validate_audit(raw: str, found: str, state: State) -> tuple[str | None, str, Verdict]:
+    """An audit check: the item is where the log has it (`found` empty), somewhere else, or
+    missing (found in Lost). Anywhere but the logged place is a mismatch, written all the
+    same: the audit says what's true. Returns (item, where it was found, verdict)."""
+    item, bad = check_item(raw, state)
+    if bad:
+        return None, "", bad
+    if item in state.fixed or state.items[item] == "build":
+        what = "a place" if item in state.fixed else "a build; its config is checked by CFG"
+        return None, "", Verdict(Kind.REJECT, (f"{item} is {what}, not kit to audit.",))
+    here = state.where.get(item, "")
+    if not found.strip():
+        return item, here, Verdict(Kind.ACCEPT)
+    shape = check_id_destination(found, state)
+    if shape and shape.kind == Kind.REJECT:
+        return None, "", shape
+    dst = resolve(canonical_destination(found, state), state.aliases)
+    stop = check_container(dst, state) or check_cycle(item, dst, state)
+    if stop:
+        return None, "", stop
+    if dst == here:
+        return item, dst, Verdict(Kind.ACCEPT)
+    seen = "missing" if dst == LOST else f"found in {dst}"
+    mismatch = Verdict(Kind.WARN, (f"{item} was logged in {here or 'nowhere'}, {seen}: a mismatch.",),
+                       ("mismatch",))
+    return item, dst, combine([shape, mismatch, check_destination(dst, state)])
 
 
 def validate_resolve(raw: str, pick: str, state: State,

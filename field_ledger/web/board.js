@@ -15,6 +15,7 @@ import { CAN_WAIT, Offline, flush, getState, me, phoneSetup, post, send, setName
 import { actionBar, css as actionCss } from "./components/actionbar.js";
 import { addDialog, css as addCss } from "./components/add-form.js";
 import { addPhoneDialog, css as addPhoneCss } from "./components/add-phone.js";
+import { auditDialog, css as auditCss } from "./components/audit.js";
 import { column, css as columnCss } from "./components/column.js";
 import { confirmDialog, css as confirmCss } from "./components/confirm.js";
 import { button, describeWrite, dialogCss } from "./components/dom.js";
@@ -30,7 +31,7 @@ const TOAST_MS = 15_000;
 
 const style = document.createElement("style");
 style.textContent = [dialogCss, columnCss, cardCss, actionCss, addCss, confirmCss, peopleCss,
-                     toastCss, needsCss, unsyncedCss, addPhoneCss].join("\n");
+                     toastCss, needsCss, unsyncedCss, addPhoneCss, auditCss].join("\n");
 document.head.append(style);
 
 let latest = { places: [], nodes: [], people: [], needs_look: [] };
@@ -228,9 +229,17 @@ function renderHeader() {
     ...(unsynced() ? [unsyncedBadge(unsynced())] : []),
     button(me.name ? `You: ${me.name}` : "Who are you?", "", () => pickName(false)),
     button("+ Add items", "", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))),
+    button(`Audit (${latest.audit?.due.length ?? 0})`, "", openAudit),
     button("Undo my last", "", () => act("undo")),
     withIcon(button("Add a phone", "", addPhone), "phone"),
   );
+}
+
+// A board saved by an older hub has no audit block: nothing to check, rather than a crash.
+function openAudit() {
+  const audit = latest.audit ?? { due: [], mismatches: [] };
+  showDialog(auditDialog(audit, latest.nodes, latest.places,
+                         (item, found) => act("audit", { item, found })));
 }
 
 async function addPhone() {

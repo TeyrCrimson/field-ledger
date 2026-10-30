@@ -7,7 +7,9 @@ CONFIRM is two-phase: the first call writes nothing and returns the CONFIRM verd
 the caller asks the person, then calls again with confirmed=True.
 """
 
+import hashlib
 import sqlite3
+import subprocess
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -23,7 +25,7 @@ from .parse import ParseError, parse
 from .state import State, audit_due, conflicts, fold, location_of, mismatches
 from .validate import (canonical_destination, check_id_destination, combine, node_id,
                        validate_deploy,
-                       validate_audit, validate_label, validate_state,
+                       validate_audit, validate_config, validate_label, validate_state,
                        validate_move, validate_rename, validate_resolve, validate_void)
 
 UNDO_WINDOW = timedelta(minutes=10)      # `undo_minutes`, until settings are a thing
@@ -206,6 +208,59 @@ def submit_audit(ctx: Context, item: str, found: str = "", confirmed: bool = Fal
         return Outcome(verdict)
     return write(ctx, verdict, "AUD", event_id, (), item=item, src=state.where.get(item, ""),
                  dst=found)
+
+
+def config_digest(contents: list[bytes]) -> str:
+    """The SHA-256 the ledger keeps for a config, always computed here from the config's own
+    bytes: no command, import line or hub request carries a hash, so none can be spoofed
+    (Teyr, 2026-10-30). One file: its plain SHA-256, what `sha256sum` prints, so anyone can
+    check it by hand. Several (a chart and its values): the SHA-256 of their sorted
+    digests, so only the bytes count, not the order or the file names. A copy pulled off
+    the device under another name still matches."""
+    digests = sorted(hashlib.sha256(data).hexdigest() for data in contents)
+    if len(digests) == 1:
+        return digests[0]
+    return hashlib.sha256("\n".join(digests).encode()).hexdigest()
+
+
+def read_config(ref: str, repo: Path) -> tuple[str, bytes]:
+    """(how the record names it, its bytes). `path` is a file on this laptop; `path@rev` is
+    that file in the code repo at a commit, named by the full commit id so the record points
+    at one exact version. Raises ValueError if it can't be read."""
+    path, at, rev = ref.rpartition("@")
+    if not (at and path):           # ponytail: a file name with '@' in it reads as path@rev
+        file = Path(ref)
+        if not file.is_file():
+            raise ValueError(f"No file '{ref}'.")
+        return ref, file.read_bytes()
+    if rev.startswith("-"):
+        raise ValueError(f"'{rev}' is not a commit.")
+    found = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet",
+                            f"{rev}^{{commit}}"], capture_output=True, text=True)
+    if found.returncode != 0:
+        raise ValueError(f"No commit '{rev}' in {repo}.")
+    commit = found.stdout.strip()
+    shown = subprocess.run(["git", "-C", str(repo), "show", f"{commit}:{path}"], capture_output=True)
+    if shown.returncode != 0:
+        raise ValueError(f"No file '{path}' at {commit[:7]} in {repo}.")
+    return f"{path}@{commit}", shown.stdout
+
+
+def submit_config(ctx: Context, build: str, refs: list[str], repo: Path, reason: str = "",
+                  check: bool = False) -> Outcome:
+    """CFG: a build's config, as a hash this function computes from the files. Recording a new
+    one logs what changed after deploying to the location. A check compares a copy of what's
+    deployed with the record, and a difference is written as a CFG flagged `mismatch`."""
+    try:
+        read = [read_config(ref, repo) for ref in refs]
+    except ValueError as error:
+        return Outcome(Verdict(Kind.REJECT, (str(error),)))
+    digest = config_digest([data for _, data in read])
+    item, verdict = validate_config(build, digest, current_state(ctx), check)
+    if item is None or not should_write(verdict, False):
+        return Outcome(verdict)
+    return write(ctx, verdict, "CFG", None, (), item=item,
+                 src=" + ".join(name for name, _ in read), dst=digest, note=reason)
 
 
 def open_conflicts(state: State, windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS

@@ -89,6 +89,8 @@ def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
                  "chain": chain, "container": holds_things(node, state)}
         if group == "build":
             entry |= {"sha": deployed_sha(state, node), "label": state.labels.get(node, "")}
+            if node in state.configs:       # read only: a config is recorded from the files
+                entry["config"] = {"sha256": state.configs[node].dst, "files": state.configs[node].src}
         states = state.kind_states.get(node.split("-")[0], []) if node not in state.fixed else []
         if states and group != "build":
             entry |= {"state": state.conditions.get(node, ""), "states": states}

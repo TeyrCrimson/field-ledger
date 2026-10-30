@@ -41,6 +41,8 @@ def describe(e: Event) -> str:
     if e.kind == "AUD":
         return (f"{e.item}  audit: here ({e.dst})" if e.dst == e.src
                 else f"{e.item}  audit: logged in {e.src or '—'}, found in {e.dst}")
+    if e.kind == "CFG":
+        return f"{e.item}  config {e.dst[:12]} ({e.src})" + (f": {e.note}" if e.note else "")
     if e.kind == "STATE":
         return f"{e.item}  state {e.dst}" + (f": {e.note}" if e.note else "")
     return f"location '{e.src}' renamed to '{e.dst}'"

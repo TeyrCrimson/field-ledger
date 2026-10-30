@@ -260,6 +260,30 @@ def validate_audit(raw: str, found: str, state: State) -> tuple[str | None, str,
     return item, dst, combine([shape, mismatch, check_destination(dst, state)])
 
 
+def validate_config(raw: str, digest: str, state: State, check: bool) -> tuple[str | None, Verdict]:
+    """A config goes on a build. Recording the hash it already has is a repeat. A check (the
+    audit, against a copy of what's deployed) is a mismatch when the hash differs, written
+    all the same: the log follows what was found. Returns (build, verdict)."""
+    item, bad = check_item(raw, state)
+    if bad:
+        return None, bad
+    if state.items[item] != "build":
+        return None, Verdict(Kind.REJECT, (f"{item} is not a build; only builds carry a config.",))
+    recorded = state.configs.get(item)
+    if check and recorded is None:
+        return None, Verdict(Kind.REJECT, (f"No config recorded for {item} yet, so nothing to "
+                                           f"check against. `field-ledger cfg {item} <file>` "
+                                           f"records one.",))
+    if recorded and recorded.dst == digest:
+        what = "matches the record" if check else "is already recorded"
+        return item, Verdict(Kind.IGNORE, (f"{item}'s config {what} ({digest[:8]}).",))
+    if check:
+        return item, Verdict(Kind.WARN, (f"{item}'s config at the site is not the one recorded: "
+                                         f"recorded {recorded.dst[:8]}, found {digest[:8]}. "
+                                         f"A mismatch.",), ("mismatch",))
+    return item, Verdict(Kind.ACCEPT)
+
+
 def validate_resolve(raw: str, pick: str, state: State,
                      open_: dict[str, tuple[str, str]]) -> tuple[str | None, str, Verdict]:
     """RESOLVE settles a ⚠ by confirming one of its two candidates; anyone may."""

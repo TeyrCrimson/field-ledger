@@ -78,6 +78,7 @@ export function itemCard(node) {
   if (inside.length) body.append(el("p", "inside", `in ${inside.join(" in ")}`));
   if (node.group === "build") {
     body.append(el("p", "build", node.sha ? `deployed as ${node.sha.slice(0, 7)}` : "commit unknown"));
+    if (node.config) body.append(el("p", "build", `config ${node.config.sha256.slice(0, 8)}`));
   }
   if (node.conflict) body.append(el("p", "warn", `⚠ or ${node.conflict.other}`));
   if (node.last) card.title = `Last: ${node.last.by}, ${new Date(node.last.at).toLocaleString()}`;

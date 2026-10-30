@@ -310,9 +310,12 @@ plain http, as long as the hub is reachable.
 `~/.local/share/field-ledger/hub-ca/` (never in the ledger repo), and signs the hub a fresh
 certificate for its current address on every start, so the travel router and a phone hotspot
 both work. It can only vouch for private network addresses (192.168.x, 10.x, 172.16–31.x),
-so a phone that trusts it can't be fooled about any site on the internet. Its name says which
-laptop made it and when (`field-ledger hub DESKTOP-1 2026-10`); the setup page shows it, and
-how to remove any other, older "field-ledger hub" certificate. http and HTTPS share the one
+so a phone that trusts it can't be fooled about any site on the internet. Its name says whose
+it is and when (`field-ledger hub casio CA 2026-10`); the setup page shows it, and how to
+remove any other, older "field-ledger hub" certificate. To name it for your team, make it
+before the first `serve --lan`: `field-ledger hub-ca new casio` (without that it's
+`field-ledger hub CA 2026-10`). `field-ledger hub-ca` shows this laptop's CA and when it
+expires (three years). http and HTTPS share the one
 port, so the firewall setup below doesn't change. It needs the `openssl` command (Ubuntu and
 WSL have it); without it the hub says "HTTPS off" and phones use plain http.
 
@@ -376,9 +379,13 @@ the letters; `pytest` checks each is 16×16 with a colour for every letter.
 
 1. Stop the old hub if it's still running (only one hub may poll the bot).
 2. On another laptop: clone the ledger repo (from its remote, or a USB `git bundle`).
-3. Copy the bot token file (see "Secrets"), and the hub's certificate authority
-   (`~/.local/share/field-ledger/hub-ca/`) if phones should keep working without being set up
-   again.
+3. Copy the bot token file (see "Secrets"), and bring the hub's certificate authority so
+   phones keep working without being set up again. On the old laptop, ahead of time:
+   `field-ledger hub-ca export /media/usb/casio-ca.p12` (it asks for a passphrase; the file
+   holds the CA's key, so it is refused inside a Git repo). On this one:
+   `field-ledger hub-ca import /media/usb/casio-ca.p12`. A laptop that already has a different
+   CA keeps it unless you add `--replace`; phones set up for the replaced one then scan the
+   QR code again. Every hub laptop of a team can share one CA this way.
 4. Run `field-ledger serve`. Phones send their queued moves; the bot hands over anything it held.
 
 Telegram keeps relayed moves for 24 hours. After that, recover them from a chat export with

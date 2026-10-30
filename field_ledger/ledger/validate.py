@@ -284,6 +284,35 @@ def validate_config(raw: str, digest: str, state: State, check: bool) -> tuple[s
     return item, Verdict(Kind.ACCEPT)
 
 
+def validate_owner(actor: str, to: str, people: list[str], state: State, now: datetime,
+                   nudged_since: datetime | None, nudge_after: timedelta) -> tuple[str | None, Verdict]:
+    """Who may write OWNER (Design Doc §3, Trust): the current owner hands over to anyone on
+    the People list; with no owner yet, anyone takes it. Otherwise only a claim for yourself,
+    once the owner's nudge (the oldest open ⚠, `nudged_since`) has gone unanswered for
+    `nudge_after`. Every day counts. Returns (the new owner as the list spells it, verdict)."""
+    name = next((p for p in people if p.casefold() == " ".join(to.split()).casefold()), None)
+    if name is None:
+        return None, Verdict(Kind.REJECT, (f"'{to}' isn't on the People list.",))
+    current = state.owner.dst if state.owner else ""
+    if name == current:
+        return None, Verdict(Kind.IGNORE, (f"{name} is already the field-ops owner.",))
+    if not current or actor == current:
+        return name, Verdict(Kind.ACCEPT)
+    if name != actor:
+        return None, Verdict(Kind.REJECT, (f"Only {current} can hand the field-ops owner over.",))
+    waited = now - nudged_since if nudged_since else None
+    if waited is None or waited < nudge_after:
+        when = (f" A ⚠ has waited {hours(waited)}; after {hours(nudge_after)}, anyone can take over."
+                if waited is not None else " Anyone can take over once a ⚠ nudge goes unanswered.")
+        return None, Verdict(Kind.REJECT, (f"Only {current} can hand the field-ops owner over.{when}",))
+    return name, Verdict(Kind.WARN, (f"{current} left a ⚠ unanswered for {hours(waited)}: "
+                                     f"{name} takes over.",), ("claimed",))
+
+
+def hours(span: timedelta) -> str:
+    return f"{int(span.total_seconds() // 3600)} h"
+
+
 def validate_resolve(raw: str, pick: str, state: State,
                      open_: dict[str, tuple[str, str]]) -> tuple[str | None, str, Verdict]:
     """RESOLVE settles a ⚠ by confirming one of its two candidates; anyone may."""

@@ -22,10 +22,12 @@ from .importer import extract_commands, import_ids, repeats
 from .kit import PlannedAdd
 from .model import Event, Kind, Move, Rename, Verdict, Void
 from .parse import ParseError, parse
-from .state import State, audit_due, conflicts, fold, location_of, mismatches
+from .state import (State, audit_due, clock, conflict_starts, conflicts, fold, location_of,
+                    mismatches)
 from .validate import (canonical_destination, check_id_destination, combine, node_id,
                        validate_deploy,
-                       validate_audit, validate_config, validate_label, validate_state,
+                       validate_audit, validate_config, validate_label, validate_owner,
+                       validate_state,
                        validate_move, validate_rename, validate_resolve, validate_void)
 
 UNDO_WINDOW = timedelta(minutes=10)      # `undo_minutes`, until settings are a thing
@@ -33,6 +35,7 @@ CONFLICT_WINDOWS = (timedelta(minutes=5), timedelta(minutes=60))   # `conflict_w
 # A phone clock this far ahead of the hub's is wrong, not early: its event is flagged `future`.
 # The device conflict window: a phone fast by less can only reorder moves that would ⚠ anyway.
 FUTURE_TOLERANCE = timedelta(minutes=5)
+NUDGE_AFTER = timedelta(days=1)          # `nudge_after`: every day counts (Teyr, 2026-10-30)
 
 
 @dataclass
@@ -261,6 +264,39 @@ def submit_config(ctx: Context, build: str, refs: list[str], repo: Path, reason:
         return Outcome(verdict)
     return write(ctx, verdict, "CFG", None, (), item=item,
                  src=" + ".join(name for name, _ in read), dst=digest, note=reason)
+
+
+def nudged_since(state: State, windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS
+                 ) -> datetime | None:
+    """When the owner's nudge began: the oldest open ⚠, or when this owner took over if
+    that was later (a new owner gets their own full day). None when there's nothing to
+    settle. Worked out on every read; nothing is written for it."""
+    oldest = min(conflict_starts(state, *windows).values(), default=None)
+    if oldest and state.owner:
+        return max(oldest, clock(state.owner))
+    return oldest
+
+
+def owner_report(state: State, now: datetime) -> dict:
+    """The field-ops owner and their nudge, as `fl owner` and the board show it."""
+    since = nudged_since(state)
+    return {"name": state.owner.dst if state.owner else "",
+            "since": state.owner.ts.isoformat() if state.owner else None,
+            "open": len(conflicts(state, *CONFLICT_WINDOWS)),
+            "nudged_since": since.isoformat() if since else None,
+            "claimable": bool(state.owner and since and now - since >= NUDGE_AFTER)}
+
+
+def submit_owner(ctx: Context, to: str, event_id: str | None = None) -> Outcome:
+    """OWNER: hand the field-ops owner over, take it when there's none, or claim it after an
+    unanswered nudge. An ordinary, attributed event either way."""
+    state = current_state(ctx)
+    name, verdict = validate_owner(ctx.actor, to, store.read_people(ctx.ledger_dir), state,
+                                   ctx.now(), nudged_since(state), NUDGE_AFTER)
+    if name is None:
+        return Outcome(verdict)
+    return write(ctx, verdict, "OWNER", event_id, (),
+                 src=state.owner.dst if state.owner else "", dst=name)
 
 
 def open_conflicts(state: State, windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS

@@ -107,7 +107,8 @@ def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
              "mismatches": [{"item": e.item, "logged": e.src, "found": e.dst, "by": e.actor,
                              "at": e.ts.isoformat(), "event": e.id} for e in wrong]}
     return {"generated_at": now.isoformat(), "places": sorted(places), "nodes": nodes,
-            "people": people or [], "needs_look": needs_look or [], "audit": audit}
+            "people": people or [], "needs_look": needs_look or [], "audit": audit,
+            "owner": service.owner_report(state, now)}
 
 
 def board_state(ledger_dir: Path, now: datetime | None = None) -> dict:
@@ -223,6 +224,15 @@ def api_audit(ctx: service.Context, body: dict) -> dict:
     return reply(outcome, f"{'✓' if e.dst == e.src else 'AUD'} {e.item} · {name} · {seen}")
 
 
+def api_owner(ctx: service.Context, body: dict) -> dict:
+    """Hand the field-ops owner over, take it, or claim it. It needs the hub: who may do it
+    depends on the owner and the nudge as they are now, not when a phone tapped."""
+    before = service.current_state(ctx).owner
+    outcome = service.submit_owner(ctx, text(body, "to", limit=40), body.get("id"))
+    e = outcome.event
+    return reply(outcome, e and f"OWNER {before.dst if before else '—'} → {e.dst}")
+
+
 def api_add(ctx: service.Context, body: dict) -> dict:
     """Items created in the field without the CLI: N more of a group, at a place."""
     prefix, at = text(body, "prefix"), canonical_location(text(body, "at"))
@@ -242,7 +252,7 @@ def api_add(ctx: service.Context, body: dict) -> dict:
 
 
 WRITES = {"move": api_move, "undo": api_undo, "resolve": api_resolve, "label": api_label,
-          "state": api_state, "audit": api_audit, "add": api_add}
+          "state": api_state, "audit": api_audit, "owner": api_owner, "add": api_add}
 
 
 def api_people(hub: Hub, body: dict) -> dict:

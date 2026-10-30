@@ -106,6 +106,7 @@ export const css = `
 .box-bar .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .box-bar .flip.armed { background: var(--select); }
 .box-body { overflow: auto; padding: var(--space); }
+.box-body.drop-over { outline: var(--px) solid var(--accent); outline-offset: calc(-2 * var(--px)); }
 .box-body .path { margin: 0 0 0.5rem; font-weight: 600; }
 .box-body .why { margin: 0 0 var(--space); color: var(--muted); font-size: 0.875rem; }
 .box-body .why li { margin: 0.15rem 0; }

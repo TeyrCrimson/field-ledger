@@ -217,6 +217,7 @@ function renderBox(nodes, pending) {
   frame.dataset.zoom = BOX_ZOOM;
   frame.style.setProperty("--z", BOX_ZOOM);
   const body = frame.querySelector(".box-body");
+  body.dataset.drop = open;                             // anywhere in the box, not just on its tiles (Teyr)
   if (path.length > 1) body.append(el("p", "path", `in ${path.slice(0, -1).reverse().join(", in ")}`));
   const status = statusOf(open, nodes, pending);
   if (status.why.length) {
@@ -225,7 +226,6 @@ function renderBox(nodes, pending) {
     body.append(why);
   }
   const grid = el("div", "grid");
-  grid.dataset.drop = open;
   for (const group of stacks(open, nodes, pending)) {
     const shown = group.nodes.length > 1 && spread.has(group.key) ? group.nodes : [group.nodes[0]];
     for (const node of shown) {

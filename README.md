@@ -267,7 +267,7 @@ fl owner ivan            # OWNER teyr → Ivan (a name from the People list)
 | **Network** | A travel router (preferred) or a phone hotspot. Laptops join as normal clients. Don't use a laptop hotspot |
 | **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation). **v0**: serves the board and takes its writes, including ones that waited on a phone (see "The hub" below) |
 | **Phones** | Open the board in a browser and add it to the home screen. Moves queue on the phone if the hub is unreachable and send when it's back. **v0**: yes; and on a phone added by QR code the board opens with no hub too (see "Phones offline") |
-| **Relay** | When phones can't reach the hub (company or public Wi-Fi, or no hub on site), moves go through the Telegram bot. The hub fetches them over outbound HTTPS. The bot carries moves; it is never the record |
+| **Relay** | When phones can't reach the hub (company or public Wi-Fi, or no hub on site), moves go through the Telegram bot. The hub fetches them over outbound HTTPS. The bot carries moves; it is never the record. **v0**: yes (see "The relay") |
 | **Backup** | The hub pushes the ledger repo when it has internet |
 
 ### The hub (v0)
@@ -417,6 +417,38 @@ the letters; `pytest` checks each is 16×16 with a colour for every letter.
   board. Watch for Notepad saving `.wslconfig.txt`; WSL only reads `.wslconfig`. The Ubuntu
   laptops and option 2 are not tried yet.
 
+### The relay (v0)
+
+When phones can't reach the hub (company or public Wi-Fi, mobile data, or no hub on site), their
+writes go through the team's Telegram bot, and the hub fetches them over outbound HTTPS when it
+has internet. The bot carries writes; it is never the record.
+
+**Setting it up (once per team):**
+1. In Telegram, ask **@BotFather** for a new bot (`/newbot`). It gives you a token.
+2. Put the token on the hub laptop, outside both repos: `FL_TELEGRAM_TOKEN=<token>`, or the
+   file `~/.config/field-ledger/telegram-token` (`chmod 600` it). Never commit it.
+3. `field-ledger serve` now polls the bot and prints `Relay: on, as @<bot>` once it reaches
+   Telegram. Only one hub may poll a bot at a time.
+4. Link each person once: `fl people link Yoeng` prints a one-time code; Yoeng sends
+   `/start <code>` to the bot. The bot answers nobody it doesn't know, so a stranger who
+   finds it learns nothing.
+
+**Using it:**
+- **From the board:** while writes wait on a phone, **Send through Telegram** packs them into
+  messages (a readable line, then `#fl` and the write itself). Copy, open the bot, paste,
+  send. Each write keeps the id, time and sequence number the phone gave it, so the hub logs
+  it once, in the order it was tapped, however often it's sent; one the hub won't log goes on
+  Needs a look. It's logged as the person whose Telegram sent it. The writes stay on the phone
+  too, and the hub answers "already logged" when it's back. Undo, owner and settling need the
+  hub itself.
+- **Typed:** `MOVE BAT-12 > van` to the bot. It asks when ("14:30" or "now"); the answer is
+  marked `prompted` (approximate, so it gets the 60-minute ⚠ window). `MOVE BAT-12 > van @14:30`
+  gives the time at once. Only moves are typed this way.
+- **Questions:** `WHERE BAT-12`, `AT van`.
+
+A hub with no internet keeps working and tries Telegram again every 30 seconds. Telegram keeps
+unfetched messages for 24 hours; after that, recover them from a chat export with `fl import`.
+
 ### Takeover: the hub laptop dies
 
 1. Stop the old hub if it's still running (only one hub may poll the bot).
@@ -435,8 +467,8 @@ Telegram keeps relayed moves for 24 hours. After that, recover them from a chat 
 
 ### No laptop on site
 
-Phones must already have the board installed. Moves go through the bot; if a move has no time,
-the bot asks for one. A rough time beats none, and it's marked `prompted`.
+Phones must already have the board installed. Moves go through the bot (see "The relay"); if a
+typed move has no time, the bot asks for one. A rough time beats none, and it's marked `prompted`.
 
 ### v0 today
 
@@ -634,7 +666,8 @@ This tool's repo is **public**. Ledger data never goes in it.
 ### Secrets
 
 Bot tokens and forge tokens live in a local, gitignored file or an environment variable.
-Never commit them. Copying the token file is part of takeover.
+Never commit them. The bot's token: `FL_TELEGRAM_TOKEN`, or `~/.config/field-ledger/telegram-token`
+(outside both repos). Copying the token file is part of takeover.
 
 ---
 
@@ -671,6 +704,7 @@ Never commit them. Copying the token file is part of takeover.
 | `ledger/cli.py` | `fl` command; opening a ledger, shared with code mode | no |
 | `cli.py` | `field-ledger` command: board, `show`, `deploy`, `label`, `undo`, `serve` | no |
 | `hub.py` | The hub: `/state.json`, the web front end, the board's writes (`/api/*`), http and HTTPS on one port | no |
+| `relay.py` | The Telegram relay: polls the bot, logs phones' waiting writes and typed moves through the hub, answers WHERE / AT | no |
 | `tls.py` | The hub's certificate authority and certificate (runs `openssl`) | no |
 | `qr.py` | QR codes for "Add a phone" | yes |
 | `web/` | The board: `tokens.css`, `components/*.js`, `icons.js`, `fonts/`, `board.js`, `api.js`, `sw.js` (offline), `setup.html`/`setup.js` (adding a phone). No build step | (front end) |

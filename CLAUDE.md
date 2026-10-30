@@ -52,6 +52,8 @@ security labels from a scanner (set by hand for now).
 - **CFG hashes are never typed** (Teyr, 2026-10-30): the tool reads the config (a file, or
   path@commit) and computes the SHA-256. No command, import line or hub request carries a hash.
   `cfg --check` against a copy of what's deployed writes a `mismatch` CFG when it differs.
+- **Nothing moves without a field-ops owner** (Teyr, 2026-10-30): `fl init` makes the creator
+  the owner; an ownerless (older) ledger refuses moves, deploys and resolves until someone takes it.
 - **Owner handover:** only the current owner writes OWNER (or anyone, while there's none),
   except anyone may claim it for themselves after a nudge has gone unanswered for
   `nudge_after`. The nudge is derived from open ⚠s (from the oldest, or the handover if later);

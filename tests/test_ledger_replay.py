@@ -123,7 +123,7 @@ def test_cache_only_events_are_written_to_the_record(tmp_path):
     old = ev("old", T, "d1", 1, "BAT-01", "truck", "ADD")
     store.cache(ctx.conn, [old])
     store.sync(ctx.conn, ctx.ledger_dir)
-    assert store.read_events(ctx.ledger_dir) == [old]
+    assert [e for e in store.read_events(ctx.ledger_dir) if e.kind != "OWNER"] == [old]
 
 
 def test_rebuild_is_identical(tmp_path):

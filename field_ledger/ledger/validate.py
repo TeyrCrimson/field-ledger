@@ -62,6 +62,16 @@ def holds_things(node: str, state: State) -> bool:
 
 # --- individual checks ---------------------------------------------------------
 
+def check_owner(state: State) -> Verdict | None:
+    """Nothing moves until the ledger has a field-ops owner (Teyr, 2026-10-30): someone has
+    to be there to settle the ⚠s that moves can raise. `fl init` makes its creator the owner,
+    so this only stops a ledger made before owners existed, once."""
+    if state.owner is not None:
+        return None
+    return Verdict(Kind.REJECT, ("This ledger has no field-ops owner yet, so nothing can be "
+                                 "moved. `fl owner <name>` (or Owner on the board) sets one.",))
+
+
 def check_item(raw: str, state: State) -> tuple[str | None, Verdict | None]:
     """Return (canonical id, None) if the node exists, else (None, REJECT)."""
     node = node_id(raw, state)
@@ -176,6 +186,8 @@ def validate_move(cmd: Move, actor: str, state: State, now: datetime) -> tuple[s
     item, bad = check_item(cmd.item, state)
     if bad:
         return None, bad
+    if no_owner := check_owner(state):
+        return None, no_owner
     shape = check_id_destination(cmd.dst, state)
     if shape and shape.kind == Kind.REJECT:
         return item, shape
@@ -249,7 +261,7 @@ def validate_audit(raw: str, found: str, state: State) -> tuple[str | None, str,
     if shape and shape.kind == Kind.REJECT:
         return None, "", shape
     dst = resolve(canonical_destination(found, state), state.aliases)
-    stop = check_container(dst, state) or check_cycle(item, dst, state)
+    stop = check_owner(state) or check_container(dst, state) or check_cycle(item, dst, state)
     if stop:
         return None, "", stop
     if dst == here:
@@ -324,13 +336,15 @@ def validate_resolve(raw: str, pick: str, state: State,
     pick = resolve(canonical_destination(pick, state), state.aliases)
     if pick not in open_[item]:
         return None, "", Verdict(Kind.REJECT, (f"Pick one of {open_[item][0]} or {open_[item][1]}.",))
+    if no_owner := check_owner(state):
+        return None, "", no_owner
     return item, pick, Verdict(Kind.ACCEPT)
 
 
 def validate_deploy(branch: str, dst: str, state: State) -> Verdict:
     """A deploy is a move of a branch node, except that the node may not exist yet, so
     `check_item` does not apply. Everything else about a move does."""
-    bad = check_container(dst, state)
+    bad = check_owner(state) or check_container(dst, state)
     if bad:
         return bad
     if branch not in state.items:

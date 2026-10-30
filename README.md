@@ -243,8 +243,10 @@ fl owner                 # Field-ops owner: teyr / 1 ⚠ to settle; nudged since
 fl owner ivan            # OWNER teyr → Ivan (a name from the People list)
 ```
 
-- The first person to take it is the owner (`fl owner <name>`, or **Owner** on the board).
-  Until then, anyone can.
+- `fl init` makes whoever creates the ledger its owner. **Nothing can be moved in a ledger
+  with no owner** (moves, deploys, ⚠ settles, an audit's "found elsewhere"): someone has to be
+  there to settle the ⚠s. A ledger made before owners existed has none; anyone may take it
+  (`fl owner <name>`, **Owner** on the board, or `fl init <name>` again), once.
 - Only the current owner hands over, to anyone on the People list. Handover is its own,
   attributed event (`OWNER teyr → Ivan`), and `undo` takes it back.
 - While a ⚠ is open, the owner is **nudged**: the board shows a banner to everyone. The nudge

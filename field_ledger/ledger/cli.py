@@ -389,8 +389,11 @@ def make_context(args: argparse.Namespace, now: Callable[[], datetime]) -> servi
 def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask, read: Read = input) -> int:
     if args.command == "init":
         store.add_person(ctx.ledger_dir, ctx.actor)          # pickable on a phone too
+        owner = service.current_state(ctx).owner
+        if owner is None:                                    # whoever makes a ledger owns it
+            owner = service.submit_owner(ctx, ctx.actor).event
         print(f"OK\n  ledger: {args.ledger_dir}  cache: {args.db}  device: {ctx.device}  "
-              f"name: {ctx.actor}")
+              f"name: {ctx.actor}  field-ops owner: {owner.dst}")
         return 0
     if args.command == "kit":
         return do_kit(ctx, read_kit(args.file.read_text(encoding="utf-8")), plan_kit)

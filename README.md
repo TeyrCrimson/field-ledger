@@ -265,7 +265,7 @@ fl owner ivan            # OWNER teyr → Ivan (a name from the People list)
 | Piece | What it is |
 |---|---|
 | **Network** | A travel router (preferred) or a phone hotspot. Laptops join as normal clients. Don't use a laptop hotspot |
-| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation), and set its clock and timezone to the site's: the audit's midnight, the nudge's days and a time typed to the bot (`14:30`) are all read on the hub's clock. **v0**: serves the board and takes its writes, including ones that waited on a phone (see "The hub" below) |
+| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation), and set its clock and timezone to the site's: the audit's midnight and a time typed to the bot (`14:30`) are both read on the hub's clock. **v0**: serves the board and takes its writes, including ones that waited on a phone (see "The hub" below) |
 | **Phones** | Open the board in a browser and add it to the home screen. Moves queue on the phone if the hub is unreachable and send when it's back. **v0**: yes; and on a phone added by QR code the board opens with no hub too (see "Phones offline") |
 | **Relay** | When phones can't reach the hub (company or public Wi-Fi, or no hub on site), moves go through the Telegram bot. The hub fetches them over outbound HTTPS. The bot carries moves; it is never the record. **v0**: yes (see "The relay") |
 | **Backup** | The hub pushes the ledger repo when it has internet |

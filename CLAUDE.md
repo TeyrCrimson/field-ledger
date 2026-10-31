@@ -52,8 +52,12 @@ security labels from a scanner (set by hand for now).
 - **CFG hashes are never typed** (Teyr, 2026-10-30): the tool reads the config (a file, or
   path@commit) and computes the SHA-256. No command, import line or hub request carries a hash.
   `cfg --check` against a copy of what's deployed writes a `mismatch` CFG when it differs.
-- **Owner handover:** only the current owner writes OWNER, except anyone may claim after a
-  nudge has gone unanswered for `nudge_after`.
+- **Nothing moves without a field-ops owner** (Teyr, 2026-10-30): `fl init` makes the creator
+  the owner; an ownerless (older) ledger refuses moves, deploys and resolves until someone takes it.
+- **Owner handover:** only the current owner writes OWNER (or anyone, while there's none),
+  except anyone may claim it for themselves after a nudge has gone unanswered for
+  `nudge_after`. The nudge is derived from open ⚠s (from the oldest, or the handover if later);
+  nothing is written for it. Every day counts: no workday or holiday guessing.
 - Event fields: id, type, item, to, logged_by, moved_by (defaults to logged_by), actor_source
   (device | telegram | import), device, occurred_at, recorded_at, time_source (device |
   prompted | import), source (+ original text for imports), sha (build deploys: head commit),
@@ -93,7 +97,7 @@ security labels from a scanner (set by hand for now).
 | `id_digits` | `2` |
 | `undo_minutes` | `10` |
 | `conflict_window` | 5 min device / 60 min prompted or import |
-| `nudge_after` | 1 working day |
+| `nudge_after` | 1 day (every day counts: no workday or holiday guessing) |
 | `ledger_dir` | `./ledger` |
 | `build_home` | `hq` (ledger repo `settings.json`; `fl set build_home <loc>`) |
 

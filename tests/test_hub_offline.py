@@ -129,13 +129,12 @@ def test_someone_not_on_the_list_is_held_too(board):
 
 def test_a_held_question_is_logged_as_the_phone_sent_it(board):
     base, ledger, clock = board
-    store.add_person(ledger, "Teyr")
-    clock.advance(hours=1)                                  # the kit was added at the start
+    clock.advance(hours=1)                                  # teyr is on the list: the owner                                  # the kit was added at the start
     body = stamped(clock, minutes=-30, seq=4, item="BAT-01", to="Blk 12")
     status, held = post(base, "move", **body, queued=True)
     assert held["held"] and held["verdict"] == "CONFIRM"
     clock.advance(minutes=5)
-    status, answer = post(base, "settle", id=body["id"], how="log", actor="Teyr", device="laptop")
+    status, answer = post(base, "settle", id=body["id"], how="log", actor="teyr", device="laptop")
     assert answer["event"] == body["id"]
     e = event(ledger, body["id"])
     assert (e.actor, e.device, e.seq, e.ts) == ("Yoeng", "phone-a1b2", 4,
@@ -143,7 +142,7 @@ def test_a_held_question_is_logged_as_the_phone_sent_it(board):
     assert "confirmed" in e.flags and location_of(state(ledger), "BAT-01") == "blk 12"
     assert needs_look(base) == []
     assert store.read_held(ledger, body["id"])["settled"] == {
-        "by": "Teyr", "at": clock().isoformat(), "how": "logged"}
+        "by": "teyr", "at": clock().isoformat(), "how": "logged"}
 
 
 def test_a_late_settled_write_keeps_its_place_in_the_phones_order(board):

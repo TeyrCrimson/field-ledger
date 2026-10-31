@@ -41,6 +41,8 @@ def describe(e: Event) -> str:
     if e.kind == "AUD":
         return (f"{e.item}  audit: here ({e.dst})" if e.dst == e.src
                 else f"{e.item}  audit: logged in {e.src or '—'}, found in {e.dst}")
+    if e.kind == "OWNER":
+        return f"field-ops owner {e.src or '—'} → {e.dst}"
     if e.kind == "CFG":
         return f"{e.item}  config {e.dst[:12]} ({e.src})" + (f": {e.note}" if e.note else "")
     if e.kind == "STATE":
@@ -230,6 +232,31 @@ def do_audit(ctx: service.Context, check: bool, read: Read, ask: Ask) -> int:
     return 0
 
 
+def do_owner(ctx: service.Context, name: str) -> int:
+    """`fl owner` shows the field-ops owner and their nudge; `fl owner <name>` hands over,
+    takes it when there's none, or claims it after an unanswered nudge."""
+    if name:
+        before = service.current_state(ctx).owner
+        outcome = service.submit_owner(ctx, name)
+        if outcome.event is None:
+            return report(outcome)
+        print(f"OWNER {before.dst if before else '—'} → {outcome.event.dst}")
+        for message in outcome.verdict.messages:
+            print(f"  {message}")
+        print(f"  logged: {render_event(outcome.event)}")
+        return 0
+    owner = service.owner_report(service.current_state(ctx), ctx.now())
+    if not owner["name"]:
+        print("Field-ops owner: nobody yet. `fl owner <name>` takes it.")
+        return 0
+    print(f"Field-ops owner: {owner['name']}")
+    if owner["open"]:
+        print(f"  {owner['open']} ⚠ to settle; nudged since {owner['nudged_since'][:16]}.")
+    if owner["claimable"]:
+        print("  The nudge has gone unanswered for a day: anyone can take over (`fl owner <you>`).")
+    return 0
+
+
 def do_import(ctx: service.Context, path: Path) -> int:
     results = service.import_text(ctx, path.read_text(encoding="utf-8"))
     for r in results:
@@ -290,6 +317,8 @@ def build_parser() -> argparse.ArgumentParser:
     settle.add_argument("location", nargs="+")
     audit = sub.add_parser("audit", help="what today's audit still has to check; --check walks it")
     audit.add_argument("--check", action="store_true", help="check each due item: here, elsewhere or missing")
+    owner = sub.add_parser("owner", help="the field-ops owner; 'owner <name>' hands over or claims")
+    owner.add_argument("name", nargs="*")
     sub.add_parser("undo", help="take back your own last command, within 10 minutes")
     people = sub.add_parser("people", help="the names phones pick from; 'people add <name>' adds one")
     people.add_argument("add", nargs="?", choices=["add"])
@@ -360,8 +389,11 @@ def make_context(args: argparse.Namespace, now: Callable[[], datetime]) -> servi
 def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask, read: Read = input) -> int:
     if args.command == "init":
         store.add_person(ctx.ledger_dir, ctx.actor)          # pickable on a phone too
+        owner = service.current_state(ctx).owner
+        if owner is None:                                    # whoever makes a ledger owns it
+            owner = service.submit_owner(ctx, ctx.actor).event
         print(f"OK\n  ledger: {args.ledger_dir}  cache: {args.db}  device: {ctx.device}  "
-              f"name: {ctx.actor}")
+              f"name: {ctx.actor}  field-ops owner: {owner.dst}")
         return 0
     if args.command == "kit":
         return do_kit(ctx, read_kit(args.file.read_text(encoding="utf-8")), plan_kit)
@@ -401,6 +433,8 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask, read: Rea
         return 0
     if args.command == "undo":
         return report(service.submit_undo(ctx))
+    if args.command == "owner":
+        return do_owner(ctx, " ".join(args.name))
     if args.command == "audit":
         return do_audit(ctx, args.check, read, ask)
     if args.command == "flags":

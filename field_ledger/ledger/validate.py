@@ -161,7 +161,11 @@ def check_duplicate(item: str, dst: str, actor: str, state: State,
     last = state.last_event.get(item)
     if (last and last.kind == "MOVE" and last.actor == actor
             and resolve(last.dst, state.aliases) == dst and now - last.ts <= DUPLICATE_WINDOW):
-        return Verdict(Kind.IGNORE, (f"Already logged {item} -> '{dst}' at {last.ts:%H:%M}.",))
+        # How long ago, not a clock time: events keep the zone they were stamped in (a phone's
+        # is UTC), and this module can't know the reader's. 23:59 showed as 15:59 (2026-11-01).
+        minutes = max(0, int((now - last.ts).total_seconds() // 60))
+        ago = "just now" if minutes == 0 else f"{minutes} min ago"
+        return Verdict(Kind.IGNORE, (f"Already logged {item} -> '{dst}' {ago}.",))
     return None
 
 

@@ -443,7 +443,8 @@ has internet. The bot carries writes; it is never the record.
   hub itself.
 - **Typed:** `MOVE BAT-12 > van` to the bot. It asks when ("14:30" or "now"); the answer is
   marked `prompted` (approximate, so it gets the 60-minute ⚠ window). `MOVE BAT-12 > van @14:30`
-  gives the time at once. Only moves are typed this way.
+  gives the time at once, and so does `… van now` or `… van 14:30`. A number with no colon
+  stays part of the place (`Gate 1430`). Only moves are typed this way.
 - **Questions:** `WHERE BAT-12`, `AT van`.
 
 A hub with no internet keeps working and tries Telegram again every 30 seconds. Telegram keeps

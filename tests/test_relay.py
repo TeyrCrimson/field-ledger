@@ -145,6 +145,22 @@ def test_a_time_after_the_move_logs_it_at_once(the_hub):
     assert again == "Already logged."
 
 
+@pytest.mark.parametrize("when", ["now", ":", "."])
+def test_a_bare_time_at_the_end_is_the_time_not_part_of_the_place(the_hub, when):
+    """`MOVE BAT-01 > truck now` logged a place called "truck now" (Teyr, 2026-11-01)."""
+    local = datetime(2026, 10, 17, 3, 0, tzinfo=timezone.utc).astimezone()   # when it's sent
+    when = when if when == "now" else f"{local.hour}{when}{local.minute:02}"
+    assert relay.handle(the_hub, message(f"move BAT-03 > van {when}"), {}).startswith("✓ BAT-03")
+    assert location_of(fold(events(the_hub)), "BAT-03") == "van"
+
+
+def test_a_number_at_the_end_with_no_colon_stays_in_the_place(the_hub):
+    pending = {}
+    assert relay.handle(the_hub, message("MOVE BAT-03 > Gate 1430"), pending) == relay.ASK_TIME
+    relay.handle(the_hub, message("now", message_id=2), pending)
+    assert location_of(fold(events(the_hub)), "BAT-03") == "gate 1430"          # places are kept in lower case
+
+
 def test_questions_and_everything_else(the_hub):
     assert relay.handle(the_hub, message("where bat-1"), {}) == "BAT-01: truck"
     assert relay.handle(the_hub, message("AT site-b"), {}) == "At site-b: CAM-01"

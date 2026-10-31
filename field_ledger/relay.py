@@ -11,7 +11,8 @@ else, so a stranger who finds it learns nothing.
   through `hub.write` exactly like a resend: logged once, held on Needs a look if refused.
 - **A typed move** (`MOVE BAT-12 > van`). It has no time, so the bot asks for one; the answer
   is marked `prompted` (approximate, so it gets the wider ⚠ window). `@14:30` at the end gives
-  the time at once. Its event id comes from the chat and message, so a refetch adds nothing.
+  the time at once; so does a bare `now` or `14:30` (with its `:`), which would otherwise end up
+  in the place's name. Its event id comes from the chat and message, so a refetch adds nothing.
 - **A question**: `WHERE BAT-12`, `AT van`. Read only.
 
 Only one hub may poll a bot at a time (Telegram refuses a second). The token lives outside
@@ -39,6 +40,9 @@ API = "https://api.telegram.org"
 TOKEN_FILE = Path.home() / ".config" / "field-ledger" / "telegram-token"
 PAYLOAD = "#fl "
 AT_TIME = re.compile(r"\s+@\s*(\S+)\s*$")
+# A move's time without the @: only what no place name ends with. `MOVE BAT-01 > truck now`
+# logged a place "truck now" (Teyr, 2026-11-01). A bare `1430` stays a place: Gate 1430.
+BARE_TIME = re.compile(r"\s+(now|\d{1,2}[:.h]\d{2})\s*$", re.IGNORECASE)
 CLOCK = re.compile(r"^(\d{1,2})[:.h]?(\d{2})$")
 TYPED_IDS = uuid.UUID("6f1c2a7e-5d3b-4c8e-9a1f-0b7e4d2c9a63")   # namespace: chat + message -> id
 ASK_TIME = "When did that happen? Reply with a time (14:30) or 'now'. A rough time beats none."
@@ -172,9 +176,9 @@ def handle(the_hub, message: dict, pending: dict) -> str | None:
         if when is not None:
             original, _, cmd = pending.pop(chat)
             return typed_move(the_hub, name, chat, original, cmd, when)
-    timed = AT_TIME.search(text)
+    timed = AT_TIME.search(text) or (text[:4].upper() == "MOVE" and BARE_TIME.search(text))
     try:
-        cmd = parse(AT_TIME.sub("", text) if timed else text)
+        cmd = parse(text[:timed.start()] if timed else text)
     except ParseError as error:
         return f"{error}\nI read MOVE <ITEM> > <PLACE>, WHERE <ITEM> and AT <PLACE>."
     if isinstance(cmd, (Where, At)):

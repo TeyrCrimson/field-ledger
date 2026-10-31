@@ -41,10 +41,15 @@ let held = false;                                       // a refresh came while 
 const $ = (id) => document.getElementById(id);
 const nodeById = (id) => latest.nodes.find((node) => node.id === id);
 
+// A modal dialog sits above the whole page, toasts included, so the toasts move into the
+// topmost open one: the audit screen stays open across many checks, each with its readback.
+const toastsHome = () => [...document.querySelectorAll("dialog[open]")].at(-1) ?? document.body;
+
 function showDialog(dialog) {
-  dialog.addEventListener("close", () => dialog.remove());
+  dialog.addEventListener("close", () => { dialog.remove(); toastsHome().append($("toasts")); });
   document.body.append(dialog);
   dialog.showModal();
+  dialog.append($("toasts"));
 }
 
 function say(text, options = {}) {

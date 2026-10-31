@@ -473,6 +473,7 @@ field-ledger show feat/secure-cdr --repo /path/to/repo   # no fetch
 #   at drone-3, deployed as 4b7e0d1
 #   moved on since deploy: deployed as 4b7e0d1, head is now 9c1d4ae
 #   security label: HIGH
+#   config: 854e00f83420 (deploy/site-b.yaml@9c1d4ae…)
 ```
 
 When the branch has moved on since its deploy, `show` says so. It only warns: nothing is
@@ -488,6 +489,29 @@ is not the same as `NA` (checked, not applicable). **v0**:
 field-ledger label feat/secure-cdr HIGH opens the CDR port to the site LAN
 # SEC feat/secure-cdr · drone-3 · was LOW → HIGH
 ```
+
+Each build also carries its **config**, as a SHA-256 that the ledger computes itself. You
+point it at the files, never at a hash: no command, import line or hub request takes one, so
+nobody can record a hash for a config that isn't there. A file is either on this laptop, or
+`path@commit` in the code repo (`--repo`, a local clone's folder), which the record names by
+its full commit id. A branch name reads where `deploy` does, `origin/<branch>` first, so a
+local branch you haven't pulled can't record an older config than the one deployed.
+One file's hash is its plain SHA-256, the same as `sha256sum` prints; several (a chart and
+its values) hash together, and only their bytes count, not their order or names. Image
+digests aren't taken yet: they can't be recomputed offline. **v0**:
+
+```bash
+field-ledger cfg feat/secure-cdr deploy/site-b.yaml@HEAD --repo /path/to/repo --reason "port 8443"
+# CFG feat/secure-cdr · drone-3 · was 1a2b3c4d → 854e00f8
+field-ledger cfg feat/secure-cdr --check ./from-drone-3.yaml   # the audit's half
+# ✓ feat/secure-cdr's config matches the record (854e00f8).
+```
+
+Each new config is a CFG event: the log of what changed after deploying to the location.
+Recording the hash it already has adds nothing. `--check` takes a copy of what's deployed
+(pulled off the device); if it differs, that's written as a CFG flagged `mismatch`, the log
+follows what was found, and the audit's mismatches count it. `undo` takes a CFG back. The
+board shows the first 8 characters of the hash on a build's card; it can't record one.
 
 ### Sample: one build, end to end (v0)
 

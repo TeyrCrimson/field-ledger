@@ -34,6 +34,7 @@ class State:
     aliases: dict[str, str] = field(default_factory=dict)      # old location -> new
     labels: dict[str, str] = field(default_factory=dict)       # build -> security label (SEC)
     conditions: dict[str, str] = field(default_factory=dict)   # item -> its state (STATE)
+    configs: dict[str, Event] = field(default_factory=dict)    # build -> its latest CFG
     containers: set[str] = field(default_factory=set)          # kinds that hold things (settings)
     kind_states: dict[str, list[str]] = field(default_factory=dict)  # kind -> its states (settings)
     chain_before: dict[str, list[str]] = field(default_factory=dict)  # move id -> item's ancestors then
@@ -121,6 +122,8 @@ def apply(state: State, event: Event) -> None:
         state.labels[event.item] = event.dst
     elif event.kind == "STATE":         # where it is and what shape it's in are separate
         state.conditions[event.item] = event.dst
+    elif event.kind == "CFG":           # latest wins: what the build runs with now
+        state.configs[event.item] = event
     state.events.append(event)
 
 
@@ -208,12 +211,14 @@ def audit_due(state: State, since: datetime) -> list[str]:
 
 def mismatches(state: State, since: datetime) -> list[Event]:
     """Where the log was wrong, since `since`: an audit found it somewhere else (or not at
-    all: found in Lost), or a Lost item turned up and was moved out."""
+    all: found in Lost), a Lost item turned up and was moved out, or a build's config at
+    the site wasn't the one recorded."""
     def was(e: Event) -> str:
         return resolve(e.src, state.aliases)
     return [e for e in state.events if clock(e) >= since and (
         (e.kind == "AUD" and was(e) != resolve(e.dst, state.aliases))
-        or (e.kind == "MOVE" and was(e) == LOST))]
+        or (e.kind == "MOVE" and was(e) == LOST)
+        or (e.kind == "CFG" and "mismatch" in e.flags))]
 
 
 def items_at(state: State, location: str) -> list[str]:

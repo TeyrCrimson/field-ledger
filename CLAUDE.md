@@ -49,6 +49,9 @@ security labels from a scanner (set by hand for now).
 - Event types: ADD, MOVE, AUD, SEC, STATE, CFG, RESOLVE, VOID, RENAME, OWNER. AUD is written
   only from an audit screen (the board's, `fl audit --check`), never typed; found elsewhere puts the node there (a mismatch). STATE is a
   kit item's state from its kind's own list; SEC stays a build's fixed-five label.
+- **CFG hashes are never typed** (Teyr, 2026-10-30): the tool reads the config (a file, or
+  path@commit) and computes the SHA-256. No command, import line or hub request carries a hash.
+  `cfg --check` against a copy of what's deployed writes a `mismatch` CFG when it differs.
 - **Owner handover:** only the current owner writes OWNER, except anyone may claim after a
   nudge has gone unanswered for `nudge_after`.
 - Event fields: id, type, item, to, logged_by, moved_by (defaults to logged_by), actor_source

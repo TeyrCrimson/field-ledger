@@ -5,6 +5,7 @@ Usage:
     python -m field_ledger show feat/x --repo ~/github-repos/casio-edge
     python -m field_ledger deploy feat/x site-b --repo ~/github-repos/casio-edge
     python -m field_ledger label feat/x CRIT exposes the CDR port
+    python -m field_ledger cfg feat/x deploy/site-b.yaml@HEAD --repo ~/github-repos/casio-edge
     python -m field_ledger undo
     python -m field_ledger serve --lan
     python -m field_ledger hub-ca export casio-ca.p12
@@ -167,6 +168,8 @@ def ledger_lines(ledger_dir: Path, branch: str, head: str) -> list[str]:
         if sha and head != sha:
             lines.append(f"moved on since deploy: deployed as {sha[:7]}, head is now {head[:7]}")
     lines.append(f"security label: {state.labels.get(branch, 'none set')}")
+    config = state.configs.get(branch)
+    lines.append(f"config: {config.dst[:12]} ({config.src})" if config else "config: none recorded")
     return lines
 
 
@@ -247,6 +250,40 @@ def do_label(argv: list[str], now: Callable[[], datetime]) -> int:
     e = outcome.event
     print(f"SEC {e.item} · {location_of(before, e.item) or '—'} · "
           f"was {before.labels.get(e.item, '—')} → {e.dst}")
+    print(f"  logged: {render_event(e)}")
+    return 0
+
+
+def do_cfg(argv: list[str], now: Callable[[], datetime]) -> int:
+    """`field-ledger cfg <branch> <file|path@commit>...`: a build's config, hashed here from the
+    files themselves; no hash is ever typed. `--check` is the audit's half: point it at a copy
+    of what's deployed, and a difference is logged as a mismatch."""
+    p = argparse.ArgumentParser(prog="field-ledger cfg",
+                                description="Record a build's config. The ledger reads the files "
+                                            "and computes their SHA-256 itself.")
+    p.add_argument("branch")
+    p.add_argument("refs", nargs="+", metavar="file",
+                   help="a file, or path@commit in --repo; several for a chart and its values")
+    p.add_argument("--repo", type=Path, default=Path("."), help="the code repo, for path@commit")
+    p.add_argument("--reason", default="", help="optional: why it changed, kept on the event")
+    p.add_argument("--check", action="store_true",
+                   help="audit: compare a copy of the deployed config with the record")
+    ledger_args(p)
+    args = p.parse_args(argv)
+    ctx = open_ledger(args.ledger_dir, args.db, args.actor, now)
+    before = service.current_state(ctx)
+    outcome = service.submit_config(ctx, args.branch, args.refs, args.repo, args.reason, args.check)
+    if outcome.event is None:
+        if outcome.verdict.kind == Kind.IGNORE:          # a match, or nothing new: not an error
+            print(f"✓ {outcome.verdict.messages[0]}")
+            return 0
+        return report(outcome)
+    e, recorded = outcome.event, before.configs.get(outcome.event.item)
+    where = location_of(before, e.item) or "—"
+    if args.check:
+        print(f"CFG {e.item} · {where} · recorded {recorded.dst[:8]}, found {e.dst[:8]}: a mismatch")
+    else:
+        print(f"CFG {e.item} · {where} · was {recorded.dst[:8] if recorded else '—'} → {e.dst[:8]}")
     print(f"  logged: {render_event(e)}")
     return 0
 
@@ -406,6 +443,8 @@ def main(argv: list[str] | None = None, ask: Ask = ask_tty,
         return do_deploy(argv[1:], now, ask)
     if argv and argv[0] == "label":
         return do_label(argv[1:], now)
+    if argv and argv[0] == "cfg":
+        return do_cfg(argv[1:], now)
     if argv and argv[0] == "serve":
         return do_serve(argv[1:])
     if argv and argv[0] == "hub-ca":

@@ -509,7 +509,9 @@ field-ledger label feat/secure-cdr HIGH opens the CDR port to the site LAN
 Each build also carries its **config**, as a SHA-256 that the ledger computes itself. You
 point it at the files, never at a hash: no command, import line or hub request takes one, so
 nobody can record a hash for a config that isn't there. A file is either on this laptop, or
-`path@commit` in the code repo (`--repo`), which the record names by its full commit id.
+`path@commit` in the code repo (`--repo`, a local clone's folder), which the record names by
+its full commit id. A branch name reads where `deploy` does, `origin/<branch>` first, so a
+local branch you haven't pulled can't record an older config than the one deployed.
 One file's hash is its plain SHA-256, the same as `sha256sum` prints; several (a chart and
 its values) hash together, and only their bytes count, not their order or names. Image
 digests aren't taken yet: they can't be recomputed offline. **v0**:

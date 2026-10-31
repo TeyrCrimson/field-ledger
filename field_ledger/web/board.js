@@ -42,14 +42,21 @@ let held = false;                                       // a refresh came while 
 const $ = (id) => document.getElementById(id);
 const nodeById = (id) => latest.nodes.find((node) => node.id === id);
 
+// A modal dialog sits above the whole page, toasts included, so the toasts move into the
+// topmost open one: the audit screen stays open across many checks, each with its readback.
+// Held here, not looked up: while a closing dialog takes it out, its id finds nothing.
+const toasts = $("toasts");
+const toastsHome = () => [...document.querySelectorAll("dialog[open]")].at(-1) ?? document.body;
+
 function showDialog(dialog) {
-  dialog.addEventListener("close", () => dialog.remove());
+  dialog.addEventListener("close", () => { dialog.remove(); toastsHome().append(toasts); });
   document.body.append(dialog);
   dialog.showModal();
+  dialog.append(toasts);
 }
 
 function say(text, options = {}) {
-  return show($("toasts"), toast(text, options), TOAST_MS);
+  return show(toasts, toast(text, options), TOAST_MS);
 }
 
 const cardOf = (id) => id && document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
@@ -78,6 +85,7 @@ async function act(command, body = {}) {
     return renderHeader();
   }
   if (answer.verdict === "CONFIRM") {
+    redrawAudit();                                      // a cancelled question keeps its row
     return showDialog(confirmDialog(answer.messages,
                                     () => act(command, { ...answer.body, confirmed: true })));
   }
@@ -91,6 +99,7 @@ async function act(command, body = {}) {
   }
   select(null);
   await refresh();
+  redrawAudit();
 }
 
 // What happened to a write that waited. Already logged (a resend) needs no word.
@@ -136,7 +145,7 @@ function select(id) {
     onCancel: () => select(null),
   })] : []));
   const bar = $("actionbar").firstElementChild;            // toasts sit above the bar, never on it
-  $("toasts").style.bottom = bar ? `${bar.offsetHeight + 8}px` : "";
+  toasts.style.bottom = bar ? `${bar.offsetHeight + 8}px` : "";
   if (!id && held) render();
 }
 
@@ -253,10 +262,24 @@ function renderHeader() {
 }
 
 // A board saved by an older hub has no audit block: nothing to check, rather than a crash.
+let auditOpen = null;                                   // the audit screen, while it's open
+const drawAudit = () => auditDialog(latest.audit ?? { due: [], mismatches: [] }, latest.nodes,
+                                    latest.places, (item, found) => act("audit", { item, found }));
+
 function openAudit() {
-  const audit = latest.audit ?? { due: [], mismatches: [] };
-  showDialog(auditDialog(audit, latest.nodes, latest.places,
-                         (item, found) => act("audit", { item, found })));
+  auditOpen = drawAudit();
+  auditOpen.addEventListener("close", () => { auditOpen = null; });
+  showDialog(auditOpen);
+}
+
+// After each answered write, the open audit screen is redrawn from the hub's list: an undone
+// or refused check comes back, and the count and mismatches stay true. Not on the timed
+// refresh, which would wipe a place half-typed into Elsewhere…. A write that waits offline
+// keeps its row away, as the check is taken.
+function redrawAudit() {
+  if (!auditOpen) return;
+  auditOpen.replaceChildren(...drawAudit().childNodes);
+  toastsHome().append(toasts);                          // it was inside, unless a dialog is above
 }
 
 function openOwner() {
@@ -292,6 +315,22 @@ async function refresh() {
   renderHeader();
   if (sent) await refresh();
 }
+
+// A newer board than the one on screen: sw.js saw a board file change, or a new sw.js took
+// over a page an older one served. Listening before the first await, so a message sent
+// while the board loads isn't missed. One toast however many files changed.
+const worker = navigator.serviceWorker;
+const hadWorker = Boolean(worker?.controller);
+let offered = false;
+function offerReload() {
+  if (offered) return;
+  offered = true;
+  const note = toast("The board has been updated.");
+  note.firstChild.after(button("Reload", "", () => location.reload()));
+  show($("toasts"), note, 10 * 60_000);
+}
+worker?.addEventListener("message", (event) => event.data === "updated" && offerReload());
+worker?.addEventListener("controllerchange", () => hadWorker && offerReload());
 
 wireBoard();
 renderHeader();

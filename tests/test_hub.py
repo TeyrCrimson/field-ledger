@@ -68,8 +68,9 @@ def test_state_json_is_the_replay(ledger):
     state = fold(read_events(ledger))
     expected = hub.snapshot(state, service.open_conflicts(state), Clock()())
     assert status == 200 and kind == "application/json"
-    assert {k: v for k, v in served.items() if k != "generated_at"} == \
-        {k: v for k, v in expected.items() if k != "generated_at"}
+    timed = ("generated_at", "audit")          # the hub runs on real time; audit: test_audit.py
+    assert {k: v for k, v in served.items() if k not in timed} == \
+        {k: v for k, v in expected.items() if k not in timed}
     nodes = {n["id"]: n for n in served["nodes"]}
     assert nodes["feat/x"].items() >= {"location": "drone-3", "label": "HIGH",
                                        "sha": "4b7e0d1" + "0" * 33}.items()

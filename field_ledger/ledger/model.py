@@ -65,10 +65,10 @@ class Event:
     device: str
     seq: int                  # per-device counter: ordering survives clock drift on one device
     actor: str
-    kind: str                 # ADD | MOVE | VOID | RENAME | SEC | STATE | RESOLVE
+    kind: str                 # ADD | MOVE | AUD | VOID | RENAME | SEC | STATE | RESOLVE
     item: str = ""
-    src: str = ""             # MOVE: stated origin. RENAME: old name.
-    dst: str = ""             # MOVE/ADD: location. RENAME: new name. SEC: the label. STATE: the state.
+    src: str = ""             # MOVE, AUD: where the log had it. RENAME: old name.
+    dst: str = ""             # MOVE/ADD: location. AUD: where it was found. RENAME: new name. SEC: the label. STATE: the state.
     ref: str = ""             # VOID: target event id
     note: str = ""            # VOID, SEC, STATE: reason. ADD: group name.
     sha: str = ""             # MOVE of a build node: its head commit when it was deployed

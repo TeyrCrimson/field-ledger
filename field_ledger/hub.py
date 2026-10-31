@@ -100,8 +100,12 @@ def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
         nodes.append(entry)
     places = ({n["location"] for n in nodes if n["location"]}
               | {n for n in state.fixed if n not in state.where})
+    due, wrong = service.audit_report(state, now)
+    audit = {"since": service.day_start(now).isoformat(), "due": due,
+             "mismatches": [{"item": e.item, "logged": e.src, "found": e.dst, "by": e.actor,
+                             "at": e.ts.isoformat(), "event": e.id} for e in wrong]}
     return {"generated_at": now.isoformat(), "places": sorted(places), "nodes": nodes,
-            "people": people or [], "needs_look": needs_look or []}
+            "people": people or [], "needs_look": needs_look or [], "audit": audit}
 
 
 def board_state(ledger_dir: Path, now: datetime | None = None) -> dict:
@@ -204,6 +208,19 @@ def api_state(ctx: service.Context, body: dict) -> dict:
                                  f"was {before.conditions.get(e.item, '—')} → {e.dst}"))
 
 
+def api_audit(ctx: service.Context, body: dict) -> dict:
+    """One check from the audit screen: `found` empty means it's where the log has it."""
+    before = service.current_state(ctx)
+    outcome = service.submit_audit(ctx, text(body, "item"), text(body, "found", required=False),
+                                   confirmed=body.get("confirmed") is True, event_id=body.get("id"))
+    e = outcome.event
+    if e is None:
+        return reply(outcome)
+    name = before.items.get(e.item, "")
+    seen = f"checked in {e.dst}" if e.dst == e.src else f"logged in {e.src or '—'}, found in {e.dst}"
+    return reply(outcome, f"{'✓' if e.dst == e.src else 'AUD'} {e.item} · {name} · {seen}")
+
+
 def api_add(ctx: service.Context, body: dict) -> dict:
     """Items created in the field without the CLI: N more of a group, at a place."""
     prefix, at = text(body, "prefix"), canonical_location(text(body, "at"))
@@ -223,7 +240,7 @@ def api_add(ctx: service.Context, body: dict) -> dict:
 
 
 WRITES = {"move": api_move, "undo": api_undo, "resolve": api_resolve, "label": api_label,
-          "state": api_state, "add": api_add}
+          "state": api_state, "audit": api_audit, "add": api_add}
 
 
 def api_people(hub: Hub, body: dict) -> dict:

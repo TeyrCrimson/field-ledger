@@ -37,6 +37,8 @@ fl where BAT-07                      # BAT-07: van (in CAS-01)
 fl resolve BAT-07 van                # settle a ⚠ when two devices disagree
 fl at site-b                         # everything there, including inside cases
 fl flags                             # everything that needs a second look
+fl audit                             # what today's audit still has to check
+fl audit --check                     # ...and check each one: here, elsewhere or missing
 fl undo                              # take back your own last command, within 10 minutes
 fl void <event-id> "wrong battery"   # correct a mistake (history is kept)
 ```
@@ -275,6 +277,15 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
 - **⚠:** a card two devices disagree on shows both places; pick it and tap where it really is.
 - **Builds:** pick one to set its security label. **+ Add items** creates N more of a kind at a
   place, without the CLI.
+- **Audit (N):** the end-of-day check. It lists, by place, every piece of kit nobody has moved
+  or checked since midnight (on the hub's clock; every day counts). One tap each: **✓ Here**
+  (nothing moves), **Elsewhere…** (it's put where it was found) or **Missing** (it goes to
+  `lost`). Each check is an AUD event, written as it's tapped and queued offline like a move.
+  Found elsewhere or missing is a **mismatch**, and so is a Lost item turning up; the screen
+  and `fl audit` list today's. `fl audit --check` is the same screen in a terminal, one item at
+  a time. Checks are only made on an audit screen, never typed as a command, so a check never
+  poses as a move. Places and builds aren't audited (a build's config is CFG's
+  job), and a case being checked doesn't check what's inside it.
 
 `fl people` lists the names; `fl people add <name>` adds one; `fl init` adds its own.
 
@@ -341,8 +352,9 @@ builds never do. `fl move BAT-01 BAT-02` is refused: `BAT-02 can't hold things`.
 **What it serves.** `GET /state.json` is the replayed state: every node with its place, container
 chain and last event; a build's commit and label; an item's `state` and its kind's `states`
 (only for kinds that have states); any ⚠ with both places; the People list;
-`needs_look`, the held writes nobody has settled.
-`POST /api/move | undo | resolve | label | state | add` takes JSON naming the person (`actor`, from the
+`needs_look`, the held writes nobody has settled; `audit`: `since` (today's start), `due` (ids)
+and today's `mismatches` (`item`, `logged`, `found`, `by`, `at`, `event`).
+`POST /api/move | undo | resolve | label | state | audit | add` takes JSON naming the person (`actor`, from the
 People list) and the browser (`device`), runs the same service functions as `fl`, and answers
 `{verdict, messages, event, readback}`. A refusal is a verdict, not an error; a malformed request
 is a 400. A phone adds `id` (a lowercase UUID, logged once), `occurred_at` (ISO, with a zone) and

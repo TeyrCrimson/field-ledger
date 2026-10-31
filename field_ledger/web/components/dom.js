@@ -20,6 +20,7 @@ export function describeWrite(command, body) {
     case "add": return `+${body.count} ${String(body.prefix).toUpperCase()} at ${body.at}`;
     case "label": return `${body.build}: label ${String(body.label).toUpperCase()}`;
     case "state": return `${body.item}: ${body.state}`;
+    case "audit": return `${body.item}: ${!body.found ? "checked" : body.found === "lost" ? "missing" : `found in ${body.found}`}`;
     case "resolve": return `${body.item} is in ${body.to}`;
     default: return command;
   }

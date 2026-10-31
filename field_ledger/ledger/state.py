@@ -19,6 +19,10 @@ from datetime import datetime, timedelta
 
 from .model import Event
 
+# ponytail: the one external location the audit knows by name; give places an `external` flag
+# when custody exits (Logistics store) need to stop being due too.
+LOST = "lost"
+
 
 @dataclass
 class State:
@@ -97,7 +101,9 @@ def apply(state: State, event: Event) -> None:
             state.fixed.add(event.item)
     # ponytail: a cycle can only arrive from two offline devices; it is skipped here
     # (the event stays in the log, voidable) until the conflicts view can show it.
-    moves = event.kind in ("MOVE", "RESOLVE") and not makes_cycle(state, event.item, event.dst)
+    # An audit that found it somewhere else puts it there: the log follows what was seen.
+    moves = (event.kind in ("MOVE", "RESOLVE", "AUD")
+             and not makes_cycle(state, event.item, event.dst))
     if moves:                           # the ⚠ rule needs what each move saw and carried
         state.chain_before[event.id] = ancestors(state, event.item)
         state.carried[event.id] = {event.item} | {
@@ -186,6 +192,28 @@ def fold(events: list[Event]) -> State:
         if event.id not in state.voided:
             apply(state, event)
     return finish(state)
+
+
+def audit_due(state: State, since: datetime) -> list[str]:
+    """Kit nobody has moved or checked since `since`, the start of the deployment day: what
+    the end-of-day audit has to look at. Places and builds aren't kit (a build's config is
+    checked by CFG), and a Lost item can't be checked where it isn't. Being carried inside a
+    case doesn't count: someone handled the case, not what's in it."""
+    touched = {e.item for e in state.events
+               if e.kind in ("ADD", "MOVE", "RESOLVE", "AUD") and clock(e) >= since}
+    return sorted(node for node in state.where
+                  if node not in touched and node not in state.fixed
+                  and state.items.get(node) != "build" and location_of(state, node) != LOST)
+
+
+def mismatches(state: State, since: datetime) -> list[Event]:
+    """Where the log was wrong, since `since`: an audit found it somewhere else (or not at
+    all: found in Lost), or a Lost item turned up and was moved out."""
+    def was(e: Event) -> str:
+        return resolve(e.src, state.aliases)
+    return [e for e in state.events if clock(e) >= since and (
+        (e.kind == "AUD" and was(e) != resolve(e.dst, state.aliases))
+        or (e.kind == "MOVE" and was(e) == LOST))]
 
 
 def items_at(state: State, location: str) -> list[str]:

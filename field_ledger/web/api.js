@@ -3,7 +3,7 @@
 // which is what lets the ⚠ rule tell two phones apart.
 //
 // Offline: every write gets its event id, time and sequence number here, when it's tapped.
-// If the hub can't be reached, a move, add, label, state or resolve waits in this browser's queue
+// If the hub can't be reached, a move, add, label, state, audit check or resolve waits in this browser's queue
 // and goes out, in order, when the hub is back; the id lets the hub log it once however often
 // it's sent. Undo and joining need the hub.
 //
@@ -13,7 +13,7 @@
 const KEY = "field-ledger";
 const QUEUE = "field-ledger-queue";
 const TIMEOUT_MS = 3_000;              // a hub that's there answers well inside this
-export const CAN_WAIT = new Set(["move", "add", "label", "state", "resolve"]);
+export const CAN_WAIT = new Set(["move", "add", "label", "state", "audit", "resolve"]);
 
 function load(key, empty) {
   try { return JSON.parse(localStorage.getItem(key)) || empty; } catch { return empty; }

@@ -260,6 +260,22 @@ async function refresh() {
   if (sent) await refresh();
 }
 
+// A newer board than the one on screen: sw.js saw a board file change, or a new sw.js took
+// over a page an older one served. Listening before the first await, so a message sent
+// while the board loads isn't missed. One toast however many files changed.
+const worker = navigator.serviceWorker;
+const hadWorker = Boolean(worker?.controller);
+let offered = false;
+function offerReload() {
+  if (offered) return;
+  offered = true;
+  const note = toast("The board has been updated.");
+  note.firstChild.after(button("Reload", "", () => location.reload()));
+  show($("toasts"), note, 10 * 60_000);
+}
+worker?.addEventListener("message", (event) => event.data === "updated" && offerReload());
+worker?.addEventListener("controllerchange", () => hadWorker && offerReload());
+
 wireBoard();
 renderHeader();
 await refresh();

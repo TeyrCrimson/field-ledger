@@ -81,13 +81,17 @@ def make_event(ctx: Context, kind: str, event_id: str | None = None, ahead: int 
                flags: tuple[str, ...] = (), **fields) -> Event:
     """`ahead` reserves seqs for events built in one batch before any of them is written.
     A phone's events keep the time and seq it gave them, so a write that waited in its queue
-    still sorts where it happened; the hub's own clock goes in recorded_at."""
+    still sorts where it happened; the hub's own clock goes in recorded_at. The phone counts
+    a write once, so every event of its batch shares that seq: reserving more would hand
+    out numbers the phone gives its next writes too, and those would sort before them."""
     now = ctx.now()
     if occurred(ctx) - now > FUTURE_TOLERANCE:
         flags += ("future",)
-    seq = ctx.seq if ctx.seq is not None else store.next_seq(ctx.conn, ctx.device)
+    # ponytail: events in one phone batch tie, in no set order. Fine for what phones batch
+    # (adds of new items, an undo's VOIDs); a batch that needs an order needs a sub-seq.
+    seq = ctx.seq if ctx.seq is not None else store.next_seq(ctx.conn, ctx.device) + ahead
     return Event(id=event_id or str(uuid.uuid4()), ts=occurred(ctx), recorded_at=now,
-                 device=ctx.device, seq=seq + ahead, actor=ctx.actor, kind=kind,
+                 device=ctx.device, seq=seq, actor=ctx.actor, kind=kind,
                  batch=ctx.batch, time_source=ctx.time_source, flags=flags, **fields)
 
 

@@ -209,6 +209,29 @@ def validate_label(raw: str, label: str, state: State) -> tuple[str | None, str,
     return item, label, Verdict(Kind.ACCEPT)
 
 
+def validate_state(raw: str, value: str, state: State) -> tuple[str | None, str, Verdict]:
+    """A state is one of its kind's own list (a battery: ready / depleted / ...), so the
+    board can offer them as buttons and an audit can count them. Places and builds have
+    none: a build's condition is its security label. Returns (item, state, verdict)."""
+    item, bad = check_item(raw, state)
+    if bad:
+        return None, "", bad
+    if item in state.fixed or state.items[item] == "build":
+        what = "a place" if item in state.fixed else "a build; it carries a security label"
+        return None, "", Verdict(Kind.REJECT, (f"{item} is {what}, not kit with a state.",))
+    kind = (canonical_item(item) or "").split("-")[0]
+    states = state.kind_states.get(kind, [])
+    if not states:
+        return None, "", Verdict(Kind.REJECT, (
+            f"{kind or item} has no states yet. `fl kind {kind or 'XXX'} states ready depleted` "
+            f"sets them.",))
+    value = value.strip().lower()
+    if value not in states:
+        return None, "", Verdict(Kind.REJECT, (f"'{value}' is not a {kind} state. Use one of "
+                                               f"{' / '.join(states)}.",))
+    return item, value, Verdict(Kind.ACCEPT)
+
+
 def validate_resolve(raw: str, pick: str, state: State,
                      open_: dict[str, tuple[str, str]]) -> tuple[str | None, str, Verdict]:
     """RESOLVE settles a ⚠ by confirming one of its two candidates; anyone may."""

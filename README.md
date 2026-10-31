@@ -60,7 +60,8 @@ things but can't be moved on the fast path. Locations can nest too (Site B > Sto
 Moves that would create a loop (the van inside BAT-12) are rejected.
 
 **Location and state are separate.** Where a battery is (its parent) and what's happening to
-it (its state) change independently. Battery states by default:
+it (its state) change independently: a move never changes a state, and a STATE event never
+moves anything. Each kind lists its own states; batteries, for example:
 
 | State | Meaning |
 |---|---|
@@ -69,7 +70,19 @@ it (its state) change independently. Battery states by default:
 | `storage` | Storage-charged for the long term |
 | `damaged` | Puffed or dropped: don't fly it |
 
-Kinds and their states are config, not code: add or edit them freely.
+Kinds and their states are config, not code: they live in the ledger's `settings.json`, so
+every laptop and phone uses the same list. A kind has no states until someone gives it some:
+
+```bash
+fl kind BAT states ready depleted storage damaged   # replaces BAT's list, in the order shown
+fl state BAT-12 depleted flew two sorties           # STATE BAT-12 · Blue 6S · was ready → depleted
+fl where BAT-12                                     # BAT-12: van (in CAS-01) · depleted
+```
+
+A state outside the kind's list is refused with the list. Places have no state, and a build's
+condition is its security label (SEC). The latest state wins, and `undo` brings the previous one
+back. Dropping a state from a list leaves the events that used it alone: the log says what was
+true then. On the board, a picked card shows its kind's states as buttons.
 
 **Only log containment that lasts beyond a work session.** A battery's parent is its case,
 charger station or van, never the drone it is flying in. Test: *would I chase someone about
@@ -79,7 +92,7 @@ where this is tomorrow?* If not, it isn't a parent.
 
 Status: **v0** has nesting, and `field-ledger deploy` creates its destination as a fixed
 location node (moving one asks for confirmation). Locations named by `fl move` are still
-free text, and older ledgers full of them keep working. Kinds and states are **planned**.
+free text, and older ledgers full of them keep working. Kit states are **v0** (`fl state`).
 
 ---
 
@@ -266,7 +279,7 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
 `fl people` lists the names; `fl people add <name>` adds one; `fl init` adds its own.
 
 **Phones offline.** Each write gets its event id, its time (`occurred_at`) and the phone's own
-sequence number when it's tapped. If the hub can't be reached, a move, add, label or resolve
+sequence number when it's tapped. If the hub can't be reached, a move, add, label, state or resolve
 waits on the phone, the header shows **N unsynced**, and the write goes out by itself, oldest
 first, when the hub is back: on reconnecting, on each 10-second refresh, and after each write.
 The hub logs an event id once, so a resend is harmless ("already logged"). Undo and "I'm new"
@@ -326,9 +339,10 @@ file's `container` column (`yes`/`no`), with `fl add CAS 2 --at truck --containe
 builds never do. `fl move BAT-01 BAT-02` is refused: `BAT-02 can't hold things`.
 
 **What it serves.** `GET /state.json` is the replayed state: every node with its place, container
-chain and last event; a build's commit and label; any ⚠ with both places; the People list;
+chain and last event; a build's commit and label; an item's `state` and its kind's `states`
+(only for kinds that have states); any ⚠ with both places; the People list;
 `needs_look`, the held writes nobody has settled.
-`POST /api/move | undo | resolve | label | add` takes JSON naming the person (`actor`, from the
+`POST /api/move | undo | resolve | label | state | add` takes JSON naming the person (`actor`, from the
 People list) and the browser (`device`), runs the same service functions as `fl`, and answers
 `{verdict, messages, event, readback}`. A refusal is a verdict, not an error; a malformed request
 is a 400. A phone adds `id` (a lowercase UUID, logged once), `occurred_at` (ISO, with a zone) and

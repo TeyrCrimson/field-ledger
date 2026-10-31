@@ -37,7 +37,8 @@ security labels from a scanner (set by hand for now).
 ## Model
 
 - **One node type.** Every ID'd thing is a node with a `kind`; each kind defines its own states
-  (battery: ready / depleted / storage / damaged). Builds are nodes of kind `build`.
+  (battery: ready / depleted / storage / damaged; `settings.json` `kinds`, none until set).
+  Builds are nodes of kind `build`.
 - **Locations** are nodes flagged `fixed`: they can hold nodes but aren't moved on the fast path.
   External locations (`Logistics store`, `Lost`) are where custody exits go.
 - **Contents follow their container** in one event. **Every move is cycle-checked.** Only a
@@ -45,7 +46,8 @@ security labels from a scanner (set by hand for now).
   builds never), on the CLI and the board alike.
 - **Location and state change through separate events.** Bulk items are one node with a count.
 - IDs are `KIND-NN`; number width is the `id_digits` setting (default 2).
-- Event types: ADD, MOVE, AUD, SEC, CFG, RESOLVE, VOID, RENAME, OWNER.
+- Event types: ADD, MOVE, AUD, SEC, STATE, CFG, RESOLVE, VOID, RENAME, OWNER. STATE is a
+  kit item's state from its kind's own list; SEC stays a build's fixed-five label.
 - **Owner handover:** only the current owner writes OWNER, except anyone may claim after a
   nudge has gone unanswered for `nudge_after`.
 - Event fields: id, type, item, to, logged_by, moved_by (defaults to logged_by), actor_source

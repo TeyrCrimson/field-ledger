@@ -65,12 +65,12 @@ class Event:
     device: str
     seq: int                  # per-device counter: ordering survives clock drift on one device
     actor: str
-    kind: str                 # ADD | MOVE | VOID | RENAME | SEC | RESOLVE
+    kind: str                 # ADD | MOVE | VOID | RENAME | SEC | STATE | RESOLVE
     item: str = ""
     src: str = ""             # MOVE: stated origin. RENAME: old name.
-    dst: str = ""             # MOVE/ADD: location. RENAME: new name. SEC: the label.
+    dst: str = ""             # MOVE/ADD: location. RENAME: new name. SEC: the label. STATE: the state.
     ref: str = ""             # VOID: target event id
-    note: str = ""            # VOID, SEC: reason. ADD: group name.
+    note: str = ""            # VOID, SEC, STATE: reason. ADD: group name.
     sha: str = ""             # MOVE of a build node: its head commit when it was deployed
     batch: str = ""           # shared by the events one command wrote; undo takes them back together
     time_source: str = ""     # '' = device clock; 'import' (or 'prompted'): approximate, wider ⚠ window

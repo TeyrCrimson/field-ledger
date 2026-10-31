@@ -211,6 +211,23 @@ def set_container(ledger_dir: Path, prefix: str, container: bool) -> None:
                     f"kind {prefix}: container {'yes' if container else 'no'}")
 
 
+def read_kind_states(ledger_dir: Path) -> dict[str, list[str]]:
+    """Each kind's own states, in the order the board shows them. A kind nobody has given
+    states to has none: most kit is just where it is."""
+    kinds = stored_settings(ledger_dir).get("kinds", {})
+    return {prefix: list(kind["states"]) for prefix, kind in kinds.items() if kind.get("states")}
+
+
+def set_kind_states(ledger_dir: Path, prefix: str, states: list[str]) -> None:
+    """Replace a kind's states. Events that used a state since dropped keep it: the log
+    says what was true then, and the next STATE uses the new list."""
+    stored = stored_settings(ledger_dir)
+    kinds = stored.get("kinds", {})
+    kinds[prefix] = {**kinds.get(prefix, {}), "states": states}
+    commit_settings(ledger_dir, {**stored, "kinds": kinds},
+                    f"kind {prefix}: states {' / '.join(states) or 'none'}")
+
+
 def read_people(ledger_dir: Path) -> list[str]:
     """The ledger's People list: the names phones pick from, so logged_by is never a typo."""
     return list(stored_settings(ledger_dir).get("people", []))

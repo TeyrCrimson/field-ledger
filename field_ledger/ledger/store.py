@@ -7,6 +7,7 @@ databases is a plain INSERT OR IGNORE, and merging two ledgers is a `git pull`.
 """
 
 import json
+import secrets
 import sqlite3
 import uuid
 from datetime import datetime
@@ -244,6 +245,35 @@ def add_person(ledger_dir: Path, name: str) -> str:
     commit_settings(ledger_dir, {**stored_settings(ledger_dir), "people": people + [name]},
                     f"people: add {name}")
     return name
+
+
+def link_code(ledger_dir: Path, name: str) -> str:
+    """A one-time code that links a Telegram account to `name` on the People list. Sending it
+    to the bot (`/start <code>`) is the only way in: the bot answers nobody it doesn't know."""
+    code = secrets.token_hex(4)
+    stored = stored_settings(ledger_dir)
+    commit_settings(ledger_dir, {**stored, "telegram_codes": {**stored.get("telegram_codes", {}),
+                                                              code: name}},
+                    f"telegram: link code for {name}")
+    return code
+
+
+def use_link_code(ledger_dir: Path, code: str, user_id: str) -> str | None:
+    """Link the Telegram account to the code's name and spend the code. None if no such code."""
+    stored = stored_settings(ledger_dir)
+    codes = dict(stored.get("telegram_codes", {}))
+    name = codes.pop(code, None)
+    if name is None:
+        return None
+    commit_settings(ledger_dir, {**stored, "telegram_codes": codes,
+                                 "telegram": {**stored.get("telegram", {}), user_id: name}},
+                    f"telegram: {name} linked")
+    return name
+
+
+def telegram_people(ledger_dir: Path) -> dict[str, str]:
+    """Telegram user id -> name on the People list."""
+    return dict(stored_settings(ledger_dir).get("telegram", {}))
 
 
 def to_json(event: Event) -> str:

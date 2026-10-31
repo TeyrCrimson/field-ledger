@@ -24,6 +24,7 @@ import { icon } from "./icons.js";
 import { needsLook, css as needsCss } from "./components/needs-look.js";
 import { nudgeBanner, ownerDialog, css as ownerCss } from "./components/owner.js";
 import { peoplePicker, css as peopleCss } from "./components/people.js";
+import { relayDialog, css as relayCss } from "./components/relay.js";
 import { show, toast, css as toastCss } from "./components/toast.js";
 import { unsyncedBadge, css as unsyncedCss } from "./components/unsynced.js";
 
@@ -32,7 +33,7 @@ const TOAST_MS = 15_000;
 
 const style = document.createElement("style");
 style.textContent = [dialogCss, columnCss, cardCss, actionCss, addCss, confirmCss, peopleCss,
-                     toastCss, needsCss, unsyncedCss, addPhoneCss, auditCss, ownerCss].join("\n");
+                     toastCss, needsCss, unsyncedCss, addPhoneCss, auditCss, ownerCss, relayCss].join("\n");
 document.head.append(style);
 
 let latest = { places: [], nodes: [], people: [], needs_look: [] };
@@ -252,6 +253,8 @@ function withIcon(node, kind) {
 function renderHeader() {
   $("actions").replaceChildren(
     ...(unsynced() ? [unsyncedBadge(unsynced())] : []),
+    ...(unsynced() && latest.relay?.bot
+      ? [button("Send through Telegram", "", () => showDialog(relayDialog(latest.relay.bot, waiting())))] : []),
     button(me.name ? `You: ${me.name}` : "Who are you?", "", () => pickName(false)),
     button("+ Add items", "", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))),
     button(`Owner: ${latest.owner?.name || "nobody"}`, "", openOwner),

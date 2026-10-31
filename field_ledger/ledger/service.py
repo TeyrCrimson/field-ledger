@@ -235,9 +235,14 @@ def read_config(ref: str, repo: Path) -> tuple[str, bytes]:
         return ref, file.read_bytes()
     if rev.startswith("-"):
         raise ValueError(f"'{rev}' is not a commit.")
-    found = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet",
-                            f"{rev}^{{commit}}"], capture_output=True, text=True)
-    if found.returncode != 0:
+    # A branch is read where deploy reads its head (git_source.last_commit): origin's copy
+    # first, so a stale local branch can't record an older config than the one deployed.
+    for name in (f"refs/remotes/origin/{rev}", rev):
+        found = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet",
+                                f"{name}^{{commit}}"], capture_output=True, text=True)
+        if found.returncode == 0:
+            break
+    else:
         raise ValueError(f"No commit '{rev}' in {repo}.")
     commit = found.stdout.strip()
     shown = subprocess.run(["git", "-C", str(repo), "show", f"{commit}:{path}"], capture_output=True)

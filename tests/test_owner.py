@@ -176,6 +176,10 @@ const labels = (node) => node ? node.all("button").map((b) => b.textContent) : n
 const people = ["teyr", "Ivan", "Yoeng"];
 const waiting = { name: "teyr", open: 1, claimable: false };
 const late = { name: "teyr", open: 1, claimable: true };
+let shown = 0;
+const tapped = nudgeBanner(late, "Ivan", () => {}, () => shown++);
+tapped.on.click[0]({ target: { closest: () => null } });          // the banner itself
+tapped.on.click[0]({ target: { closest: () => ({}) } });          // its Take over button
 console.log(JSON.stringify({
   quiet: nudgeBanner({ name: "teyr", open: 0, claimable: false }, "Ivan", () => {}),
   waiting: labels(nudgeBanner(waiting, "Ivan", () => {})),
@@ -183,6 +187,7 @@ console.log(JSON.stringify({
   ownerSees: labels(ownerDialog(waiting, people, "teyr", () => {})),
   othersSee: labels(ownerDialog(waiting, people, "Ivan", () => {})),
   claim: labels(ownerDialog(late, people, "Ivan", () => {})),
+  shown,
 }));
 """
 
@@ -194,4 +199,4 @@ def test_the_board_offers_only_what_the_hub_would_accept():
     assert json.loads(out.stdout) == {
         "quiet": None, "waiting": [], "late": ["Take over"],
         "ownerSees": ["Ivan", "Yoeng", "Close"], "othersSee": ["Close"],
-        "claim": ["Take over", "Close"]}
+        "claim": ["Take over", "Close"], "shown": 1}

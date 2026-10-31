@@ -109,6 +109,18 @@ function moveTo(target) {
   if (selected && target !== selected) act("move", { item: selected, to: target });
 }
 
+// The banner's tap: pick the ⚠ card after the one picked now (the first, if none), and
+// bring it into view just above the bar (centring it would put it under a tall bar).
+function showNextConflict() {
+  const open = latest.nodes.filter((node) => node.conflict);
+  if (!open.length) return;
+  const next = open[(open.findIndex((node) => node.id === selected) + 1) % open.length];
+  select(next.id);
+  const card = cardOf(next.id);
+  const barTop = $("actionbar").firstElementChild?.getBoundingClientRect().top ?? innerHeight;
+  if (card) scrollBy(0, card.getBoundingClientRect().bottom - barTop + 16);
+}
+
 function select(id) {
   selected = id;
   const node = id && nodeById(id);
@@ -159,7 +171,8 @@ function render() {
     return section;
   });
   $("board").replaceChildren(...columns);
-  const banner = latest.owner && nudgeBanner(latest.owner, me.name, () => act("owner", { to: me.name }));
+  const banner = latest.owner && nudgeBanner(latest.owner, me.name, () => act("owner", { to: me.name }),
+                                             showNextConflict);
   $("nudge").replaceChildren(...(banner ? [banner] : []));
   $("needs-look").replaceChildren(...(latest.needs_look.length ? [needsLook(latest.needs_look, {
     onLog: (entry) => act("settle", { id: entry.id, how: "log" }),

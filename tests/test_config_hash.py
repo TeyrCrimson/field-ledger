@@ -6,6 +6,7 @@ The audit's half, `--check`, compares a copy of what's deployed with the record.
 
 import hashlib
 import json
+import subprocess
 import urllib.error
 import urllib.request
 
@@ -57,6 +58,18 @@ def test_path_at_commit_is_read_from_the_repo_and_named_by_full_commit(deployed,
     assert e.dst == sha("base")
     name, _, commit_id = e.src.partition("@")
     assert name == "base" and len(commit_id) == 40
+
+
+def test_a_branch_is_read_where_deploy_reads_it(deployed, tmp_path):
+    """Deploy takes a branch's head from origin/<branch>; a stale local branch must not hand
+    cfg an older commit than the one deployed (Teyr's #42 check, 2026-10-31)."""
+    run = lambda *a: subprocess.run(["git", "-C", str(deployed), *a], check=True,
+                                    capture_output=True, text=True).stdout.strip()
+    run("checkout", "-q", "pending")
+    run("branch", "-f", "main", "main~1")                 # local main behind origin/main
+    assert cfg(tmp_path, deployed, "pending", "merged@main") == 0
+    e = configs(tmp_path)["pending"]
+    assert e.dst == sha("merged") and e.src == f"merged@{run('rev-parse', 'origin/main')}"
 
 
 def test_a_chart_and_its_values_ignore_order_and_names(deployed, tmp_path):

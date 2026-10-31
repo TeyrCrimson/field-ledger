@@ -198,3 +198,18 @@ def test_an_event_from_before_f3_has_no_recorded_at(tmp_path):
     conn = store.connect(tmp_path / "c.db")
     store.cache(conn, [e])
     assert store.load(conn) == [e]
+
+
+def test_a_phones_batch_uses_one_of_its_seqs(board):
+    """The phone counts a write once, however many events the hub makes of it. Numbering a
+    3-case add 1, 2, 3 made the phone's next write (seq 2) sort before the last case's ADD:
+    a day-old ADD won over today's move, and undo reached for it (2026-10-31)."""
+    base, ledger, clock = board
+    post(base, "add", **stamped(clock, seq=1, prefix="CAS", count=3, at="truck", name="Pelican"))
+    clock.advance(minutes=24 * 60)
+    post(base, "move", **stamped(clock, seq=2, item="CAS-03", to="van"))
+    assert location_of(state(ledger), "CAS-03") == "van"
+    clock.advance(minutes=1)
+    status, answer = post(base, "undo", **stamped(clock, seq=3))
+    assert answer["verdict"] == "ACCEPT"
+    assert location_of(state(ledger), "CAS-03") == "truck"

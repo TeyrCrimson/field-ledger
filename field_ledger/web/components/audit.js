@@ -10,6 +10,7 @@ export const css = `
 .audit .what { margin: 0 0 calc(var(--space) / 2); font-family: var(--mono); font-weight: 600; }
 .audit .row, .audit form { display: flex; flex-wrap: wrap; gap: calc(var(--space) / 2); }
 .audit form { margin-top: calc(var(--space) / 2); }
+.audit form[hidden] { display: none; }        /* the flex above would show it before Elsewhere… */
 .audit form input { flex: 1; min-width: 8rem; }
 .audit .wrong { color: var(--warn); }
 `;
@@ -60,7 +61,8 @@ export function auditDialog(audit, nodes, places, onCheck) {
   known.id = "audit-places";
   for (const place of places) known.append(Object.assign(el("option", ""), { value: place }));
   const close = el("div", "row");
-  close.append(button("Done", "", () => dialog.close()));
+  // The dialog it sits in, not 'dialog': a redraw moves this row into the open one (board.js).
+  close.append(button("Done", "", () => close.closest("dialog").close()));
   dialog.append(known, close);
   return dialog;
 }

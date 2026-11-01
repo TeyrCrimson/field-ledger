@@ -69,6 +69,7 @@ class Hub:
     setup_url: str = ""                     # what the laptop's QR code opens; '' without --lan
     ca_cert: Path | None = None             # the CA a phone installs; None without HTTPS
     ca_name: str = ""                       # how a phone lists that CA
+    relay_bot: str = ""                     # the Telegram bot's username, while the relay runs
 
 
 class BadRequest(ValueError):
@@ -109,6 +110,11 @@ def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
     return {"generated_at": now.isoformat(), "places": sorted(places), "nodes": nodes,
             "people": people or [], "needs_look": needs_look or [], "audit": audit,
             "owner": service.owner_report(state, now)}
+
+
+def with_relay(board: dict, bot: str) -> dict:
+    """The bot a phone can send its waiting writes through, when the hub runs the relay."""
+    return {**board, "relay": {"bot": bot}} if bot else board
 
 
 def board_state(ledger_dir: Path, now: datetime | None = None) -> dict:
@@ -251,6 +257,10 @@ def api_add(ctx: service.Context, body: dict) -> dict:
     return reply(outcome, f"✓ {len(written)} added: {ids} · {name} · at {at}")
 
 
+# What a phone's waiting writes may be when they come through the relay: the same as what
+# waits on a phone (api.js CAN_WAIT). Undo, owner and settle need the hub itself.
+CAN_RELAY = {"move", "add", "label", "state", "audit", "resolve"}
+
 WRITES = {"move": api_move, "undo": api_undo, "resolve": api_resolve, "label": api_label,
           "state": api_state, "audit": api_audit, "owner": api_owner, "add": api_add}
 
@@ -269,10 +279,11 @@ def person(hub: Hub, body: dict) -> str:
     return actor
 
 
-def run(hub: Hub, command: str, body: dict) -> dict:
+def run(hub: Hub, command: str, body: dict, time_source: str = "") -> dict:
     """Run one write as the person, device, time and seq the request names. A fresh cache
     connection per write: the server is threaded, and syncing first picks up `fl` and
-    `git pull`."""
+    `git pull`. `time_source` is only ever set by the relay (a typed move's asked-for time
+    is `prompted`), never by a request."""
     actor, device = person(hub, body), text(body, "device", limit=64)
     if not DEVICE.match(device):
         raise BadRequest("'device' must be letters, digits and dashes.")
@@ -281,12 +292,13 @@ def run(hub: Hub, command: str, body: dict) -> dict:
     try:
         store.sync(conn, hub.ledger_dir)
         return WRITES[command](service.Context(conn, actor, device, hub.now, hub.ledger_dir,
+                                               time_source=time_source,
                                                occurred_at=occurred_at, seq=seq), body)
     finally:
         conn.close()
 
 
-def write(hub: Hub, command: str, body: dict) -> dict:
+def write(hub: Hub, command: str, body: dict, time_source: str = "") -> dict:
     """One request. An event id is logged once. A write that waited in a phone's queue and
     can't be logged as it stands (refused, asked, or malformed) is held, not dropped."""
     if command == "people":
@@ -301,13 +313,13 @@ def write(hub: Hub, command: str, body: dict) -> dict:
     if event_id and (entry := store.read_held(hub.ledger_dir, event_id)):
         return held_reply(entry)
     try:
-        answer = run(hub, command, body)
+        answer = run(hub, command, body, time_source)
     except BadRequest as error:
         if not queued:
             raise
         answer = {"verdict": "REJECT", "messages": [str(error)], "event": None, "readback": ""}
     if queued and answer["verdict"] in ("REJECT", "CONFIRM"):
-        return hold(hub, command, body, answer)
+        return hold(hub, command, body, answer, time_source)
     return answer
 
 
@@ -318,8 +330,8 @@ def held_reply(entry: dict) -> dict:
             "readback": "", "held": True}
 
 
-def hold(hub: Hub, command: str, body: dict, answer: dict) -> dict:
-    entry = {"id": body["id"], "command": command,
+def hold(hub: Hub, command: str, body: dict, answer: dict, time_source: str = "") -> dict:
+    entry = {"id": body["id"], "command": command, "time_source": time_source,
              "body": {k: v for k, v in body.items() if k not in ("queued", "confirmed")},
              "verdict": answer["verdict"], "messages": answer["messages"],
              "recorded_at": hub.now().isoformat(), "settled": None}
@@ -338,7 +350,8 @@ def api_settle(hub: Hub, body: dict) -> dict:
     if entry is None or entry["settled"]:
         raise BadRequest("Nothing is waiting under that id.")
     if how == "log":
-        answer = run(hub, entry["command"], {**entry["body"], "confirmed": True})
+        answer = run(hub, entry["command"], {**entry["body"], "confirmed": True},
+                     entry.get("time_source", ""))
         if not answer["event"]:
             return answer
     else:
@@ -362,7 +375,8 @@ class Board(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = unquote(self.path.split("?", 1)[0])
         if path == "/state.json":
-            return self.send_json(HTTPStatus.OK, board_state(self.hub.ledger_dir, self.hub.now()))
+            return self.send_json(HTTPStatus.OK, with_relay(board_state(self.hub.ledger_dir, self.hub.now()),
+                                                            self.hub.relay_bot))
         if path == "/phone-setup.json" and self.hub.setup_url:
             return self.send_json(HTTPStatus.OK, phone_setup(self.hub))
         if path == "/ca.crt" and self.hub.ca_cert:

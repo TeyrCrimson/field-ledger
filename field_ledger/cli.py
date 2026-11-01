@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from getpass import getpass
 from pathlib import Path
 
-from . import hub, qr, tls
+from . import hub, qr, relay, tls
 from .classify import build_row, days_between, sort_rows
 from .git_source import is_merged, last_commit, list_branches, run_git
 from .ledger import service, store
@@ -411,6 +411,10 @@ def do_serve(argv: list[str]) -> int:
         print(qr.terminal(qr.encode(the_hub.setup_url)))
     if not store.read_people(args.ledger_dir):
         print("  No People yet: the first person to open the board adds their name.")
+    token = relay.read_token()
+    if token:
+        relay.start(the_hub, token)
+        print("Relay: polling the Telegram bot (only one hub may). Links: `fl people link <name>`.")
     print("Ctrl-C stops it.")
     try:
         server.serve_forever()

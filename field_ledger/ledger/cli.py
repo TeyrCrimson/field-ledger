@@ -232,6 +232,19 @@ def do_audit(ctx: service.Context, check: bool, read: Read, ask: Ask) -> int:
     return 0
 
 
+def do_link(ctx: service.Context, name: str) -> int:
+    """A one-time code that links someone's Telegram to their name, for the relay."""
+    known = next((p for p in store.read_people(ctx.ledger_dir)
+                  if p.casefold() == " ".join(name.split()).casefold()), None)
+    if known is None:
+        print(f"REJECT\n  '{name}' isn't on the People list. `fl people add {name}` first.")
+        return 1
+    code = store.link_code(ctx.ledger_dir, known)
+    print(f"OK\n  {known} sends this to the team's bot once: /start {code}\n"
+          f"  (or opens https://t.me/<bot>?start={code}). The code works once.")
+    return 0
+
+
 def do_owner(ctx: service.Context, name: str) -> int:
     """`fl owner` shows the field-ops owner and their nudge; `fl owner <name>` hands over,
     takes it when there's none, or claims it after an unanswered nudge."""
@@ -320,8 +333,9 @@ def build_parser() -> argparse.ArgumentParser:
     owner = sub.add_parser("owner", help="the field-ops owner; 'owner <name>' hands over or claims")
     owner.add_argument("name", nargs="*")
     sub.add_parser("undo", help="take back your own last command, within 10 minutes")
-    people = sub.add_parser("people", help="the names phones pick from; 'people add <name>' adds one")
-    people.add_argument("add", nargs="?", choices=["add"])
+    people = sub.add_parser("people", help="the names phones pick from; 'people add <name>' adds "
+                                           "one; 'people link <name>' links their Telegram")
+    people.add_argument("add", nargs="?", choices=["add", "link"])
     people.add_argument("name", nargs="*")
     setting = sub.add_parser("set", help="change a ledger setting, e.g. 'set build_home lab'")
     setting.add_argument("key", choices=sorted(store.DEFAULT_SETTINGS))
@@ -412,6 +426,8 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask, read: Rea
         return do_kind(ctx, args.prefix.upper(), args.what, args.value)
     if args.command == "state":
         return do_state(ctx, args.item, args.state, " ".join(args.reason))
+    if args.command == "people" and args.add == "link":
+        return do_link(ctx, " ".join(args.name))
     if args.command == "people":
         if args.add and args.name:
             print(f"OK\n  {store.add_person(ctx.ledger_dir, ' '.join(args.name))} is on the list.")

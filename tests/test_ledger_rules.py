@@ -61,6 +61,17 @@ def test_double_tap_within_window_is_ignored(ctx):
     assert service.submit_move(ctx, Move("BAT-01", "site-b")).verdict.kind == Kind.IGNORE
 
 
+def test_a_double_tap_says_how_long_ago_not_a_clock_time(ctx):
+    """A clock time came out in the zone the event was stamped in: UTC for a phone, so 23:59
+    in Singapore read 15:59 (Teyr, 2026-11-01). How long ago is the same everywhere."""
+    service.submit_move(ctx, Move("BAT-01", "site-b"))
+    assert service.submit_move(ctx, Move("BAT-01", "site-b")).verdict.messages == (
+        "Already logged BAT-01 -> 'site-b' just now.",)
+    ctx.now.advance(seconds=90)
+    assert service.submit_move(ctx, Move("BAT-01", "site-b")).verdict.messages == (
+        "Already logged BAT-01 -> 'site-b' 1 min ago.",)
+
+
 def test_same_move_after_window_needs_confirmation_not_ignored(ctx):
     service.submit_move(ctx, Move("BAT-01", "site-b"))
     ctx.now.advance(minutes=3)

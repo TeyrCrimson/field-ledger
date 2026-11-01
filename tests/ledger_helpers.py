@@ -24,7 +24,11 @@ def make_ctx(db: Path, actor: str = "teyr", clock: Clock | None = None) -> servi
     store.init_ledger(ledger)
     conn = store.connect(db)
     store.sync(conn, ledger)
-    return service.Context(conn, actor, store.ensure_device(conn), clock or Clock(), ledger)
+    ctx = service.Context(conn, actor, store.ensure_device(conn), clock or Clock(), ledger)
+    if service.current_state(ctx).owner is None:         # as `fl init` does: nothing moves without one
+        store.add_person(ledger, actor)
+        service.submit_owner(ctx, actor)
+    return ctx
 
 
 def seed(ctx: service.Context) -> None:

@@ -7,6 +7,7 @@ databases is a plain INSERT OR IGNORE, and merging two ledgers is a `git pull`.
 """
 
 import json
+import secrets
 import sqlite3
 import uuid
 from datetime import datetime
@@ -242,6 +243,23 @@ def write_layout(ledger_dir: Path, layout: dict, message: str) -> None:
     run_git(ledger_dir, "commit", "-q", "-m", message)
 
 
+def read_kind_states(ledger_dir: Path) -> dict[str, list[str]]:
+    """Each kind's own states, in the order the board shows them. A kind nobody has given
+    states to has none: most kit is just where it is."""
+    kinds = stored_settings(ledger_dir).get("kinds", {})
+    return {prefix: list(kind["states"]) for prefix, kind in kinds.items() if kind.get("states")}
+
+
+def set_kind_states(ledger_dir: Path, prefix: str, states: list[str]) -> None:
+    """Replace a kind's states. Events that used a state since dropped keep it: the log
+    says what was true then, and the next STATE uses the new list."""
+    stored = stored_settings(ledger_dir)
+    kinds = stored.get("kinds", {})
+    kinds[prefix] = {**kinds.get(prefix, {}), "states": states}
+    commit_settings(ledger_dir, {**stored, "kinds": kinds},
+                    f"kind {prefix}: states {' / '.join(states) or 'none'}")
+
+
 def read_people(ledger_dir: Path) -> list[str]:
     """The ledger's People list: the names phones pick from, so logged_by is never a typo."""
     return list(stored_settings(ledger_dir).get("people", []))
@@ -258,6 +276,35 @@ def add_person(ledger_dir: Path, name: str) -> str:
     commit_settings(ledger_dir, {**stored_settings(ledger_dir), "people": people + [name]},
                     f"people: add {name}")
     return name
+
+
+def link_code(ledger_dir: Path, name: str) -> str:
+    """A one-time code that links a Telegram account to `name` on the People list. Sending it
+    to the bot (`/start <code>`) is the only way in: the bot answers nobody it doesn't know."""
+    code = secrets.token_hex(4)
+    stored = stored_settings(ledger_dir)
+    commit_settings(ledger_dir, {**stored, "telegram_codes": {**stored.get("telegram_codes", {}),
+                                                              code: name}},
+                    f"telegram: link code for {name}")
+    return code
+
+
+def use_link_code(ledger_dir: Path, code: str, user_id: str) -> str | None:
+    """Link the Telegram account to the code's name and spend the code. None if no such code."""
+    stored = stored_settings(ledger_dir)
+    codes = dict(stored.get("telegram_codes", {}))
+    name = codes.pop(code, None)
+    if name is None:
+        return None
+    commit_settings(ledger_dir, {**stored, "telegram_codes": codes,
+                                 "telegram": {**stored.get("telegram", {}), user_id: name}},
+                    f"telegram: {name} linked")
+    return name
+
+
+def telegram_people(ledger_dir: Path) -> dict[str, str]:
+    """Telegram user id -> name on the People list."""
+    return dict(stored_settings(ledger_dir).get("telegram", {}))
 
 
 def to_json(event: Event) -> str:

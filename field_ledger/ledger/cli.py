@@ -5,6 +5,7 @@ Exit codes: 0 written/ignored/query ok, 1 rejected, 2 confirmation declined.
 
 import argparse
 import os
+import re
 import sys
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -15,12 +16,13 @@ from .ids import canonical_location, is_prefix
 from .kit import Group, plan_kit, plan_more, read_kit
 from .model import At, Event, Kind, Move, Rename, Verdict, Void, Where
 from .parse import ParseError, parse
-from .state import ancestors, items_at
+from .state import ancestors, items_at, location_of
 from .validate import canonical_destination, node_id, not_found
 
 TAG = {Kind.ACCEPT: "OK", Kind.WARN: "WARN", Kind.CONFIRM: "CONFIRM",
        Kind.REJECT: "REJECT", Kind.IGNORE: "IGNORED"}
 Ask = Callable[[str], bool]
+Read = Callable[[str], str]
 
 
 # --- rendering -----------------------------------------------------------------
@@ -36,6 +38,15 @@ def describe(e: Event) -> str:
         return f"{e.item}  ⚠ resolved: {e.dst}"
     if e.kind == "SEC":
         return f"{e.item}  security {e.dst}" + (f": {e.note}" if e.note else "")
+    if e.kind == "AUD":
+        return (f"{e.item}  audit: here ({e.dst})" if e.dst == e.src
+                else f"{e.item}  audit: logged in {e.src or '—'}, found in {e.dst}")
+    if e.kind == "OWNER":
+        return f"field-ops owner {e.src or '—'} → {e.dst}"
+    if e.kind == "CFG":
+        return f"{e.item}  config {e.dst[:12]} ({e.src})" + (f": {e.note}" if e.note else "")
+    if e.kind == "STATE":
+        return f"{e.item}  state {e.dst}" + (f": {e.note}" if e.note else "")
     return f"location '{e.src}' renamed to '{e.dst}'"
 
 
@@ -95,7 +106,9 @@ def do_where(ctx: service.Context, cmd: Where) -> int:
     held = f" (in {' in '.join(inside)})" if inside else ""
     other = service.open_conflicts(state).get(item, ("", ""))[1]
     flag = f"  ⚠ or {other}" if other else ""
-    print(f"{item}: {location}{held}{flag}\n  last: {render_event(state.last_event[item])}")
+    condition = f" · {state.conditions[item]}" if item in state.conditions else ""
+    print(f"{item}: {location}{held}{condition}{flag}\n"
+          f"  last: {render_event(state.last_event[item])}")
     if other:
         print(f"  Two devices disagree. Settle it: fl resolve {item} <{location} or {other}>")
     return 0
@@ -131,6 +144,132 @@ def do_kit(ctx: service.Context, groups: list[Group], planner) -> int:
     for e in written:
         print(f"  {e.item}  at {e.dst}")
     print(f"OK\n  {len(written)} item(s) added.")
+    return 0
+
+
+STATE_NAME = re.compile(r"[a-z][a-z0-9-]{0,19}$")
+
+
+def do_kind(ctx: service.Context, prefix: str, what: str, values: list[str]) -> int:
+    if what in ("container", "vehicle"):
+        if values not in (["yes"], ["no"]):
+            print(f"REJECT\n  Say yes or no: `fl kind {prefix} {what} yes`.")
+            return 1
+        yes = values == ["yes"]
+        store.set_kind(ctx.ledger_dir, prefix, what, yes)
+        print(f"OK\n  {prefix} {'holds' if yes else 'does not hold'} things." if what == "container"
+              else f"OK\n  {prefix} {'is' if yes else 'is not'} a vehicle"
+                   + (": it holds things and parks at a location." if yes else "."))
+        return 0
+    states = list(dict.fromkeys(v.lower() for v in values))
+    bad = [s for s in states if not STATE_NAME.match(s)]
+    if not states or bad:
+        print("REJECT\n  States are short words, e.g. `fl kind BAT states ready depleted "
+              "storage damaged`." + (f" Not a state: {', '.join(bad)}." if bad else ""))
+        return 1
+    store.set_kind_states(ctx.ledger_dir, prefix, states)
+    print(f"OK\n  {prefix} states: {' / '.join(states)}")
+    return 0
+
+
+def do_state(ctx: service.Context, item: str, value: str, reason: str) -> int:
+    before = service.current_state(ctx)
+    outcome = service.submit_state(ctx, item, value, reason)
+    if outcome.event is None:
+        return report(outcome)
+    e = outcome.event
+    print(f"STATE {e.item} · {before.items.get(e.item, '')} · "
+          f"was {before.conditions.get(e.item, '—')} → {e.dst}")
+    print(f"  logged: {render_event(e)}")
+    return 0
+
+
+def walk_audit(ctx: service.Context, due: list[str], read: Read, ask: Ask) -> None:
+    """The terminal's audit screen: one item at a time, the board's three answers. Each check
+    is its own write, so quitting halfway keeps the ones made. A check is still never a typed
+    command: the screen asks about the items that are due, and nothing else."""
+    for item in due:
+        state = service.current_state(ctx)
+        try:
+            answer = read(f"{item} · {state.items[item]} · logged in {location_of(state, item)}: "
+                          "[h]ere, [e]lsewhere, [m]issing, [s]kip, [q]uit? ").strip().lower()[:1]
+            if answer == "q":
+                return
+            found = {"h": "", "m": "lost"}.get(answer)
+            if answer == "e":
+                found = read("  Where was it? ").strip()
+        except EOFError:
+            return
+        if not found and answer != "h":
+            print("  Skipped.")
+            continue
+        outcome = service.submit_audit(ctx, item, found)
+        if outcome.verdict.kind == Kind.CONFIRM:
+            print(render_verdict(outcome.verdict))
+            if ask("  Log it anyway? [y/N] "):
+                outcome = service.submit_audit(ctx, item, found, confirmed=True)
+        if outcome.event is None:
+            print(f"  Not logged: {' '.join(outcome.verdict.messages)}")
+        else:
+            print(f"  logged: {render_event(outcome.event)}")
+
+
+def do_audit(ctx: service.Context, check: bool, read: Read, ask: Ask) -> int:
+    """What today's audit still has to check, and what it found wrong. With --check, walk the
+    due list and check each one, as on the board's audit screen."""
+    if check:
+        walk_audit(ctx, service.audit_report(service.current_state(ctx), ctx.now())[0], read, ask)
+    state = service.current_state(ctx)
+    due, wrong = service.audit_report(state, ctx.now())
+    by_place: dict[str, list[str]] = {}
+    for item in due:
+        by_place.setdefault(location_of(state, item), []).append(item)
+    print(f"Audit due today: {len(due)}")
+    for place, items in sorted(by_place.items()):
+        print(f"  {place}: {', '.join(items)}")
+    print(f"Mismatches today: {len(wrong)}")
+    for e in wrong:
+        print(f"  {render_event(e)}")
+    if due:
+        print("Check them on the board (Audit) or with `fl audit --check`.")
+    return 0
+
+
+def do_link(ctx: service.Context, name: str) -> int:
+    """A one-time code that links someone's Telegram to their name, for the relay."""
+    known = next((p for p in store.read_people(ctx.ledger_dir)
+                  if p.casefold() == " ".join(name.split()).casefold()), None)
+    if known is None:
+        print(f"REJECT\n  '{name}' isn't on the People list. `fl people add {name}` first.")
+        return 1
+    code = store.link_code(ctx.ledger_dir, known)
+    print(f"OK\n  {known} sends this to the team's bot once: /start {code}\n"
+          f"  (or opens https://t.me/<bot>?start={code}). The code works once.")
+    return 0
+
+
+def do_owner(ctx: service.Context, name: str) -> int:
+    """`fl owner` shows the field-ops owner and their nudge; `fl owner <name>` hands over,
+    takes it when there's none, or claims it after an unanswered nudge."""
+    if name:
+        before = service.current_state(ctx).owner
+        outcome = service.submit_owner(ctx, name)
+        if outcome.event is None:
+            return report(outcome)
+        print(f"OWNER {before.dst if before else '—'} → {outcome.event.dst}")
+        for message in outcome.verdict.messages:
+            print(f"  {message}")
+        print(f"  logged: {render_event(outcome.event)}")
+        return 0
+    owner = service.owner_report(service.current_state(ctx), ctx.now())
+    if not owner["name"]:
+        print("Field-ops owner: nobody yet. `fl owner <name>` takes it.")
+        return 0
+    print(f"Field-ops owner: {owner['name']}")
+    if owner["open"]:
+        print(f"  {owner['open']} ⚠ to settle; nudged since {owner['nudged_since'][:16]}.")
+    if owner["claimable"]:
+        print("  The nudge has gone unanswered for a day: anyone can take over (`fl owner <you>`).")
     return 0
 
 
@@ -170,11 +309,15 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--name", help="group name (defaults to the prefix)")
     add.add_argument("--container", action="store_true",
                      help="this kind can hold other things (a case, a van, a drone)")
-    kind = sub.add_parser("kind", help="whether a kind holds things, or is a vehicle: "
-                                       "'kind CAS container yes', 'kind VAN vehicle yes'")
+    kind = sub.add_parser("kind", help="'kind CAS container yes', 'kind VAN vehicle yes', or a "
+                                       "kind's states: 'kind BAT states ready depleted storage damaged'")
     kind.add_argument("prefix")
-    kind.add_argument("what", choices=["container", "vehicle"])
-    kind.add_argument("value", choices=["yes", "no"])
+    kind.add_argument("what", choices=["container", "vehicle", "states"])
+    kind.add_argument("value", nargs="*")
+    condition = sub.add_parser("state", help="what shape an item is in, e.g. 'state BAT-12 depleted'")
+    condition.add_argument("item")
+    condition.add_argument("state")
+    condition.add_argument("reason", nargs="*")
     move = sub.add_parser("move", help="log a movement")
     move.add_argument("item")
     move.add_argument("to", nargs="+")
@@ -188,9 +331,14 @@ def build_parser() -> argparse.ArgumentParser:
     settle = sub.add_parser("resolve", help="settle a ⚠ by confirming one of its two places")
     settle.add_argument("item")
     settle.add_argument("location", nargs="+")
+    audit = sub.add_parser("audit", help="what today's audit still has to check; --check walks it")
+    audit.add_argument("--check", action="store_true", help="check each due item: here, elsewhere or missing")
+    owner = sub.add_parser("owner", help="the field-ops owner; 'owner <name>' hands over or claims")
+    owner.add_argument("name", nargs="*")
     sub.add_parser("undo", help="take back your own last command, within 10 minutes")
-    people = sub.add_parser("people", help="the names phones pick from; 'people add <name>' adds one")
-    people.add_argument("add", nargs="?", choices=["add"])
+    people = sub.add_parser("people", help="the names phones pick from; 'people add <name>' adds "
+                                           "one; 'people link <name>' links their Telegram")
+    people.add_argument("add", nargs="?", choices=["add", "link"])
     people.add_argument("name", nargs="*")
     setting = sub.add_parser("set", help="change a ledger setting, e.g. 'set build_home lab'")
     setting.add_argument("key", choices=sorted(store.DEFAULT_SETTINGS))
@@ -255,11 +403,14 @@ def make_context(args: argparse.Namespace, now: Callable[[], datetime]) -> servi
                        args.name if args.command == "init" else None)
 
 
-def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
+def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask, read: Read = input) -> int:
     if args.command == "init":
         store.add_person(ctx.ledger_dir, ctx.actor)          # pickable on a phone too
+        owner = service.current_state(ctx).owner
+        if owner is None:                                    # whoever makes a ledger owns it
+            owner = service.submit_owner(ctx, ctx.actor).event
         print(f"OK\n  ledger: {args.ledger_dir}  cache: {args.db}  device: {ctx.device}  "
-              f"name: {ctx.actor}")
+              f"name: {ctx.actor}  field-ops owner: {owner.dst}")
         return 0
     if args.command == "kit":
         return do_kit(ctx, read_kit(args.file.read_text(encoding="utf-8")), plan_kit)
@@ -275,12 +426,11 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
         if not is_prefix(args.prefix):
             print(f"REJECT\n  '{args.prefix}' isn't a kind: 3 letters, e.g. CAS.")
             return 1
-        prefix, yes = args.prefix.upper(), args.value == "yes"
-        store.set_kind(ctx.ledger_dir, prefix, args.what, yes)
-        print(f"OK\n  {prefix} {'holds' if yes else 'does not hold'} things." if args.what == "container"
-              else f"OK\n  {prefix} {'is' if yes else 'is not'} a vehicle"
-                   + (": it holds things and parks at a location." if yes else "."))
-        return 0
+        return do_kind(ctx, args.prefix.upper(), args.what, args.value)
+    if args.command == "state":
+        return do_state(ctx, args.item, args.state, " ".join(args.reason))
+    if args.command == "people" and args.add == "link":
+        return do_link(ctx, " ".join(args.name))
     if args.command == "people":
         if args.add and args.name:
             print(f"OK\n  {store.add_person(ctx.ledger_dir, ' '.join(args.name))} is on the list.")
@@ -302,6 +452,10 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
         return 0
     if args.command == "undo":
         return report(service.submit_undo(ctx))
+    if args.command == "owner":
+        return do_owner(ctx, " ".join(args.name))
+    if args.command == "audit":
+        return do_audit(ctx, args.check, read, ask)
     if args.command == "flags":
         return do_list(service.flagged_events(service.current_state(ctx)))
     if args.command == "log":
@@ -309,11 +463,11 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask) -> int:
     return execute(ctx, to_command(args), getattr(args, "yes", False), ask)
 
 
-def main(argv: list[str] | None = None, ask: Ask = ask_tty,
+def main(argv: list[str] | None = None, ask: Ask = ask_tty, read: Read = input,
          now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> int:
     args = build_parser().parse_args(argv)
     try:
-        return dispatch(make_context(args, now), args, ask)
+        return dispatch(make_context(args, now), args, ask, read)
     except (ParseError, ValueError) as err:
         print(f"REJECT\n  {err}")
         return 1

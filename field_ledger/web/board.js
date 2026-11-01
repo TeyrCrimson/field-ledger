@@ -15,13 +15,16 @@ import { CAN_WAIT, Offline, flush, getState, me, phoneSetup, post, send, setName
 import { actionBar, css as actionCss } from "./components/actionbar.js";
 import { addDialog, css as addCss } from "./components/add-form.js";
 import { addPhoneDialog, css as addPhoneCss } from "./components/add-phone.js";
+import { auditDialog, css as auditCss } from "./components/audit.js";
 import { column, css as columnCss } from "./components/column.js";
 import { confirmDialog, css as confirmCss } from "./components/confirm.js";
 import { button, describeWrite, dialogCss } from "./components/dom.js";
 import { itemCard, markCard, unmarkCard, css as cardCss } from "./components/item-card.js";
 import { icon } from "./icons.js";
 import { needsLook, css as needsCss } from "./components/needs-look.js";
+import { nudgeBanner, ownerDialog, css as ownerCss } from "./components/owner.js";
 import { peoplePicker, css as peopleCss } from "./components/people.js";
+import { relayDialog, css as relayCss } from "./components/relay.js";
 import { show, toast, css as toastCss } from "./components/toast.js";
 import { unsyncedBadge, css as unsyncedCss } from "./components/unsynced.js";
 
@@ -30,7 +33,7 @@ const TOAST_MS = 15_000;
 
 const style = document.createElement("style");
 style.textContent = [dialogCss, columnCss, cardCss, actionCss, addCss, confirmCss, peopleCss,
-                     toastCss, needsCss, unsyncedCss, addPhoneCss].join("\n");
+                     toastCss, needsCss, unsyncedCss, addPhoneCss, auditCss, ownerCss, relayCss].join("\n");
 document.head.append(style);
 
 let latest = { places: [], nodes: [], people: [], needs_look: [] };
@@ -40,14 +43,21 @@ let held = false;                                       // a refresh came while 
 const $ = (id) => document.getElementById(id);
 const nodeById = (id) => latest.nodes.find((node) => node.id === id);
 
+// A modal dialog sits above the whole page, toasts included, so the toasts move into the
+// topmost open one: the audit screen stays open across many checks, each with its readback.
+// Held here, not looked up: while a closing dialog takes it out, its id finds nothing.
+const toasts = $("toasts");
+const toastsHome = () => [...document.querySelectorAll("dialog[open]")].at(-1) ?? document.body;
+
 function showDialog(dialog) {
-  dialog.addEventListener("close", () => dialog.remove());
+  dialog.addEventListener("close", () => { dialog.remove(); toastsHome().append(toasts); });
   document.body.append(dialog);
   dialog.showModal();
+  dialog.append(toasts);
 }
 
 function say(text, options = {}) {
-  return show($("toasts"), toast(text, options), TOAST_MS);
+  return show(toasts, toast(text, options), TOAST_MS);
 }
 
 const cardOf = (id) => id && document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
@@ -76,6 +86,7 @@ async function act(command, body = {}) {
     return renderHeader();
   }
   if (answer.verdict === "CONFIRM") {
+    redrawAudit();                                      // a cancelled question keeps its row
     return showDialog(confirmDialog(answer.messages,
                                     () => act(command, { ...answer.body, confirmed: true })));
   }
@@ -89,6 +100,7 @@ async function act(command, body = {}) {
   }
   select(null);
   await refresh();
+  redrawAudit();
 }
 
 // What happened to a write that waited. Already logged (a resend) needs no word.
@@ -107,6 +119,18 @@ function moveTo(target) {
   if (selected && target !== selected) act("move", { item: selected, to: target });
 }
 
+// The banner's tap: pick the ⚠ card after the one picked now (the first, if none), and
+// bring it into view just above the bar (centring it would put it under a tall bar).
+function showNextConflict() {
+  const open = latest.nodes.filter((node) => node.conflict);
+  if (!open.length) return;
+  const next = open[(open.findIndex((node) => node.id === selected) + 1) % open.length];
+  select(next.id);
+  const card = cardOf(next.id);
+  const barTop = $("actionbar").firstElementChild?.getBoundingClientRect().top ?? innerHeight;
+  if (card) scrollBy(0, card.getBoundingClientRect().bottom - barTop + 16);
+}
+
 function select(id) {
   selected = id;
   const node = id && nodeById(id);
@@ -118,10 +142,11 @@ function select(id) {
     onMove: moveTo,
     onResolve: (place) => act("resolve", { item: node.id, to: place }),
     onLabel: (label) => act("label", { build: node.id, label }),
+    onState: (state) => act("state", { item: node.id, state }),
     onCancel: () => select(null),
   })] : []));
   const bar = $("actionbar").firstElementChild;            // toasts sit above the bar, never on it
-  $("toasts").style.bottom = bar ? `${bar.offsetHeight + 8}px` : "";
+  toasts.style.bottom = bar ? `${bar.offsetHeight + 8}px` : "";
   if (!id && held) render();
 }
 
@@ -156,6 +181,9 @@ function render() {
     return section;
   });
   $("board").replaceChildren(...columns);
+  const banner = latest.owner && nudgeBanner(latest.owner, me.name, () => act("owner", { to: me.name }),
+                                             showNextConflict);
+  $("nudge").replaceChildren(...(banner ? [banner] : []));
   $("needs-look").replaceChildren(...(latest.needs_look.length ? [needsLook(latest.needs_look, {
     onLog: (entry) => act("settle", { id: entry.id, how: "log" }),
     onDismiss: (entry) => act("settle", { id: entry.id, how: "dismiss" }),
@@ -225,11 +253,42 @@ function withIcon(node, kind) {
 function renderHeader() {
   $("actions").replaceChildren(
     ...(unsynced() ? [unsyncedBadge(unsynced())] : []),
+    ...(unsynced() && latest.relay?.bot
+      ? [button("Send through Telegram", "", () => showDialog(relayDialog(latest.relay.bot, waiting())))] : []),
     button(me.name ? `You: ${me.name}` : "Who are you?", "", () => pickName(false)),
     button("+ Add items", "", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))),
+    button(`Owner: ${latest.owner?.name || "nobody"}`, "", openOwner),
+    button(`Audit (${latest.audit?.due.length ?? 0})`, "", openAudit),
     button("Undo my last", "", () => act("undo")),
     withIcon(button("Add a phone", "", addPhone), "phone"),
   );
+}
+
+// A board saved by an older hub has no audit block: nothing to check, rather than a crash.
+let auditOpen = null;                                   // the audit screen, while it's open
+const drawAudit = () => auditDialog(latest.audit ?? { due: [], mismatches: [] }, latest.nodes,
+                                    latest.places, (item, found) => act("audit", { item, found }));
+
+function openAudit() {
+  auditOpen = drawAudit();
+  auditOpen.addEventListener("close", () => { auditOpen = null; });
+  showDialog(auditOpen);
+}
+
+// After each answered write, the open audit screen is redrawn from the hub's list: an undone
+// or refused check comes back, and the count and mismatches stay true. Not on the timed
+// refresh, which would wipe a place half-typed into Elsewhere…. A write that waits offline
+// keeps its row away, as the check is taken.
+function redrawAudit() {
+  if (!auditOpen) return;
+  auditOpen.replaceChildren(...drawAudit().childNodes);
+  toastsHome().append(toasts);                          // it was inside, unless a dialog is above
+}
+
+function openOwner() {
+  const owner = latest.owner ?? { name: "", open: 0, claimable: false };
+  const dialog = ownerDialog(owner, latest.people, me.name, (to) => { dialog.close(); act("owner", { to }); });
+  showDialog(dialog);
 }
 
 async function addPhone() {
@@ -259,6 +318,22 @@ async function refresh() {
   renderHeader();
   if (sent) await refresh();
 }
+
+// A newer board than the one on screen: sw.js saw a board file change, or a new sw.js took
+// over a page an older one served. Listening before the first await, so a message sent
+// while the board loads isn't missed. One toast however many files changed.
+const worker = navigator.serviceWorker;
+const hadWorker = Boolean(worker?.controller);
+let offered = false;
+function offerReload() {
+  if (offered) return;
+  offered = true;
+  const note = toast("The board has been updated.");
+  note.firstChild.after(button("Reload", "", () => location.reload()));
+  show($("toasts"), note, 10 * 60_000);
+}
+worker?.addEventListener("message", (event) => event.data === "updated" && offerReload());
+worker?.addEventListener("controllerchange", () => hadWorker && offerReload());
 
 wireBoard();
 renderHeader();

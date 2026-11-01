@@ -71,6 +71,17 @@ def test_the_board_sees_which_nodes_are_vehicles(ctx):
     assert not nodes["CAS-01"]["vehicle"] and not nodes["BAT-01"]["vehicle"]
 
 
+def test_a_check_in_the_van_does_not_restart_its_overnight_clock(ctx):
+    """Kit left in a vehicle is ! from the day after the move that put it there (Design Doc
+    §5). An audit's ✓ Here the next morning is not that move, so it mustn't hide the !."""
+    service.submit_move(ctx, Move("BAT-01", "VAN-01"))
+    moved = ctx.now().isoformat()
+    ctx.now.advance(minutes=60 * 20)
+    assert service.submit_audit(ctx, "BAT-01").event is not None
+    battery = next(n for n in hub.board_state(ctx.ledger_dir)["nodes"] if n["id"] == "BAT-01")
+    assert battery["placed"] == moved and battery["last"]["at"] != moved
+
+
 # --- the layout ----------------------------------------------------------------------
 
 @pytest.fixture

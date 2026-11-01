@@ -37,7 +37,8 @@ security labels from a scanner (set by hand for now).
 ## Model
 
 - **One node type.** Every ID'd thing is a node with a `kind`; each kind defines its own states
-  (battery: ready / depleted / storage / damaged). Builds are nodes of kind `build`.
+  (battery: ready / depleted / storage / damaged; `settings.json` `kinds`, none until set).
+  Builds are nodes of kind `build`.
 - **Locations** are nodes flagged `fixed`: they can hold nodes but aren't moved on the fast path.
   External locations (`Logistics store`, `Lost`) are where custody exits go.
 - **Contents follow their container** in one event. **Every move is cycle-checked.** Only a
@@ -45,9 +46,18 @@ security labels from a scanner (set by hand for now).
   builds never), on the CLI and the board alike.
 - **Location and state change through separate events.** Bulk items are one node with a count.
 - IDs are `KIND-NN`; number width is the `id_digits` setting (default 2).
-- Event types: ADD, MOVE, AUD, SEC, CFG, RESOLVE, VOID, RENAME, OWNER.
-- **Owner handover:** only the current owner writes OWNER, except anyone may claim after a
-  nudge has gone unanswered for `nudge_after`.
+- Event types: ADD, MOVE, AUD, SEC, STATE, CFG, RESOLVE, VOID, RENAME, OWNER. AUD is written
+  only from an audit screen (the board's, `fl audit --check`), never typed; found elsewhere puts the node there (a mismatch). STATE is a
+  kit item's state from its kind's own list; SEC stays a build's fixed-five label.
+- **CFG hashes are never typed** (Teyr, 2026-10-30): the tool reads the config (a file, or
+  path@commit) and computes the SHA-256. No command, import line or hub request carries a hash.
+  `cfg --check` against a copy of what's deployed writes a `mismatch` CFG when it differs.
+- **Nothing moves without a field-ops owner** (Teyr, 2026-10-30): `fl init` makes the creator
+  the owner; an ownerless (older) ledger refuses moves, deploys and resolves until someone takes it.
+- **Owner handover:** only the current owner writes OWNER (or anyone, while there's none),
+  except anyone may claim it for themselves after a nudge has gone unanswered for
+  `nudge_after`. The nudge is derived from open ⚠s (from the oldest, or the handover if later);
+  nothing is written for it. Every day counts: no workday or holiday guessing.
 - Event fields: id, type, item, to, logged_by, moved_by (defaults to logged_by), actor_source
   (device | telegram | import), device, occurred_at, recorded_at, time_source (device |
   prompted | import), source (+ original text for imports), sha (build deploys: head commit),
@@ -78,6 +88,9 @@ security labels from a scanner (set by hand for now).
   hub's CA lives in `~/.local/share/field-ledger/hub-ca/` (never the ledger repo), is limited to
   private IPs, and signs a hub certificate for the current address on each start. Phones join by
   QR code (`setup.html`); `sw.js` keeps the board openable offline. Needs `openssl`.
+- **Relay** (`relay.py`): carries the board's own queued writes (`#fl` + JSON) through
+  `hub.write` like a resend, as the linked Telegram user; typed MOVEs are asked for a time
+  (a clock time is `prompted`; `now` is exact, Teyr 2026-11-01); only `/start <code>`-linked users get replies. Token outside both repos.
 - **Derived state** (code mode): branch age and last commit from local Git, always, offline.
 
 ## Settings (defaults)
@@ -87,7 +100,7 @@ security labels from a scanner (set by hand for now).
 | `id_digits` | `2` |
 | `undo_minutes` | `10` |
 | `conflict_window` | 5 min device / 60 min prompted or import |
-| `nudge_after` | 1 working day |
+| `nudge_after` | 1 day (every day counts: no workday or holiday guessing) |
 | `ledger_dir` | `./ledger` |
 | `build_home` | `hq` (ledger repo `settings.json`; `fl set build_home <loc>`) |
 

@@ -77,13 +77,13 @@ function startOfToday() {
 
 // When this node went into the vehicle it's in: the latest move among it and whatever it's
 // packed in below the vehicle (a battery packed into a case already in the van entered the
-// van then). ponytail: `last` is the node's last event of any kind, not only moves; close
-// enough until AUD and states arrive (F4).
+// van then). `placed` is the move that put each there: an audit's ✓ Here or a settle that
+// confirms where it was doesn't restart the clock (Design Doc §5).
 function inVehicleSince(node, nodes) {
   const at = node.chain.findIndex((id) => nodes.get(id)?.vehicle);
   if (at < 0) return null;
   const times = [node, ...node.chain.slice(0, at).map((id) => nodes.get(id))]
-    .map((n) => n?.last?.at).filter(Boolean).map((t) => new Date(t));
+    .map((n) => n?.placed).filter(Boolean).map((t) => new Date(t));
   return times.length ? { since: new Date(Math.max(...times)), vehicle: node.chain[at] } : null;
 }
 

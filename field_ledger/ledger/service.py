@@ -7,7 +7,9 @@ CONFIRM is two-phase: the first call writes nothing and returns the CONFIRM verd
 the caller asks the person, then calls again with confirmed=True.
 """
 
+import hashlib
 import sqlite3
+import subprocess
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -20,10 +22,12 @@ from .importer import extract_commands, import_ids, repeats
 from .kit import PlannedAdd
 from .model import Event, Kind, Move, Rename, Verdict, Void
 from .parse import ParseError, parse
-from .state import State, conflicts, fold, location_of
+from .state import (State, audit_due, clock, conflict_starts, conflicts, fold, location_of,
+                    mismatches)
 from .validate import (canonical_destination, check_id_destination, combine, node_id,
                        validate_deploy,
-                       validate_label,
+                       validate_audit, validate_config, validate_label, validate_owner,
+                       validate_state,
                        validate_move, validate_rename, validate_resolve, validate_void)
 
 UNDO_WINDOW = timedelta(minutes=10)      # `undo_minutes`, until settings are a thing
@@ -31,6 +35,7 @@ CONFLICT_WINDOWS = (timedelta(minutes=5), timedelta(minutes=60))   # `conflict_w
 # A phone clock this far ahead of the hub's is wrong, not early: its event is flagged `future`.
 # The device conflict window: a phone fast by less can only reorder moves that would ⚠ anyway.
 FUTURE_TOLERANCE = timedelta(minutes=5)
+NUDGE_AFTER = timedelta(days=1)          # `nudge_after`: every day counts (Teyr, 2026-10-30)
 
 
 @dataclass
@@ -61,10 +66,11 @@ class ImportLine:
 
 
 def current_state(ctx: Context) -> State:
-    """The replay, plus which kinds hold things (a setting, not an event)."""
+    """The replay, plus which kinds hold things and their states (settings, not events)."""
     state = fold(store.load(ctx.conn))
     state.containers = store.read_containers(ctx.ledger_dir)
     state.vehicles = store.read_vehicles(ctx.ledger_dir)
+    state.kind_states = store.read_kind_states(ctx.ledger_dir)
     return state
 
 
@@ -82,13 +88,17 @@ def make_event(ctx: Context, kind: str, event_id: str | None = None, ahead: int 
                flags: tuple[str, ...] = (), **fields) -> Event:
     """`ahead` reserves seqs for events built in one batch before any of them is written.
     A phone's events keep the time and seq it gave them, so a write that waited in its queue
-    still sorts where it happened; the hub's own clock goes in recorded_at."""
+    still sorts where it happened; the hub's own clock goes in recorded_at. The phone counts
+    a write once, so every event of its batch shares that seq: reserving more would hand
+    out numbers the phone gives its next writes too, and those would sort before them."""
     now = ctx.now()
     if occurred(ctx) - now > FUTURE_TOLERANCE:
         flags += ("future",)
-    seq = ctx.seq if ctx.seq is not None else store.next_seq(ctx.conn, ctx.device)
+    # ponytail: events in one phone batch tie, in no set order. Fine for what phones batch
+    # (adds of new items, an undo's VOIDs); a batch that needs an order needs a sub-seq.
+    seq = ctx.seq if ctx.seq is not None else store.next_seq(ctx.conn, ctx.device) + ahead
     return Event(id=event_id or str(uuid.uuid4()), ts=occurred(ctx), recorded_at=now,
-                 device=ctx.device, seq=seq + ahead, actor=ctx.actor, kind=kind,
+                 device=ctx.device, seq=seq, actor=ctx.actor, kind=kind,
                  batch=ctx.batch, time_source=ctx.time_source, flags=flags, **fields)
 
 
@@ -170,6 +180,133 @@ def submit_label(ctx: Context, branch: str, label: str, reason: str = "",
     if item is None:
         return Outcome(verdict)
     return write(ctx, verdict, "SEC", event_id, (), item=item, dst=label, note=reason)
+
+
+def submit_state(ctx: Context, item: str, value: str, reason: str = "",
+                 event_id: str | None = None) -> Outcome:
+    """STATE: what shape a piece of kit is in (a battery depleted), separate from where it
+    is, so a move never changes a state and a state never moves anything. Latest wins."""
+    item, value, verdict = validate_state(item, value, current_state(ctx))
+    if item is None:
+        return Outcome(verdict)
+    return write(ctx, verdict, "STATE", event_id, (), item=item, dst=value, note=reason)
+
+
+def day_start(now: datetime) -> datetime:
+    """A deployment day starts at local midnight on the machine asking (the hub, or the laptop
+    running `fl`). Every day counts, as with kit left in a vehicle."""
+    return now.astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def audit_report(state: State, now: datetime) -> tuple[list[str], list[Event]]:
+    """(what's due, today's mismatches): the audit screen and `fl audit` read the same."""
+    since = day_start(now)
+    return audit_due(state, since), mismatches(state, since)
+
+
+def submit_audit(ctx: Context, item: str, found: str = "", confirmed: bool = False,
+                 event_id: str | None = None) -> Outcome:
+    """AUD: one item checked at the end-of-day audit. Only the board's audit screen writes
+    it (never a typed command), so a check never poses as a move and a move never as a check.
+    Found where the log has it: the location stays. Found elsewhere or missing: it's put
+    there, and it counts as a mismatch."""
+    state = current_state(ctx)
+    item, found, verdict = validate_audit(item, found, state)
+    if item is None or not should_write(verdict, confirmed):
+        return Outcome(verdict)
+    return write(ctx, verdict, "AUD", event_id, (), item=item, src=state.where.get(item, ""),
+                 dst=found)
+
+
+def config_digest(contents: list[bytes]) -> str:
+    """The SHA-256 the ledger keeps for a config, always computed here from the config's own
+    bytes: no command, import line or hub request carries a hash, so none can be spoofed
+    (Teyr, 2026-10-30). One file: its plain SHA-256, what `sha256sum` prints, so anyone can
+    check it by hand. Several (a chart and its values): the SHA-256 of their sorted
+    digests, so only the bytes count, not the order or the file names. A copy pulled off
+    the device under another name still matches."""
+    digests = sorted(hashlib.sha256(data).hexdigest() for data in contents)
+    if len(digests) == 1:
+        return digests[0]
+    return hashlib.sha256("\n".join(digests).encode()).hexdigest()
+
+
+def read_config(ref: str, repo: Path) -> tuple[str, bytes]:
+    """(how the record names it, its bytes). `path` is a file on this laptop; `path@rev` is
+    that file in the code repo at a commit, named by the full commit id so the record points
+    at one exact version. Raises ValueError if it can't be read."""
+    path, at, rev = ref.rpartition("@")
+    if not (at and path):           # ponytail: a file name with '@' in it reads as path@rev
+        file = Path(ref)
+        if not file.is_file():
+            raise ValueError(f"No file '{ref}'.")
+        return ref, file.read_bytes()
+    if rev.startswith("-"):
+        raise ValueError(f"'{rev}' is not a commit.")
+    # A branch is read where deploy reads its head (git_source.last_commit): origin's copy
+    # first, so a stale local branch can't record an older config than the one deployed.
+    for name in (f"refs/remotes/origin/{rev}", rev):
+        found = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet",
+                                f"{name}^{{commit}}"], capture_output=True, text=True)
+        if found.returncode == 0:
+            break
+    else:
+        raise ValueError(f"No commit '{rev}' in {repo}.")
+    commit = found.stdout.strip()
+    shown = subprocess.run(["git", "-C", str(repo), "show", f"{commit}:{path}"], capture_output=True)
+    if shown.returncode != 0:
+        raise ValueError(f"No file '{path}' at {commit[:7]} in {repo}.")
+    return f"{path}@{commit}", shown.stdout
+
+
+def submit_config(ctx: Context, build: str, refs: list[str], repo: Path, reason: str = "",
+                  check: bool = False) -> Outcome:
+    """CFG: a build's config, as a hash this function computes from the files. Recording a new
+    one logs what changed after deploying to the location. A check compares a copy of what's
+    deployed with the record, and a difference is written as a CFG flagged `mismatch`."""
+    try:
+        read = [read_config(ref, repo) for ref in refs]
+    except ValueError as error:
+        return Outcome(Verdict(Kind.REJECT, (str(error),)))
+    digest = config_digest([data for _, data in read])
+    item, verdict = validate_config(build, digest, current_state(ctx), check)
+    if item is None or not should_write(verdict, False):
+        return Outcome(verdict)
+    return write(ctx, verdict, "CFG", None, (), item=item,
+                 src=" + ".join(name for name, _ in read), dst=digest, note=reason)
+
+
+def nudged_since(state: State, windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS
+                 ) -> datetime | None:
+    """When the owner's nudge began: the oldest open ⚠, or when this owner took over if
+    that was later (a new owner gets their own full day). None when there's nothing to
+    settle. Worked out on every read; nothing is written for it."""
+    oldest = min(conflict_starts(state, *windows).values(), default=None)
+    if oldest and state.owner:
+        return max(oldest, clock(state.owner))
+    return oldest
+
+
+def owner_report(state: State, now: datetime) -> dict:
+    """The field-ops owner and their nudge, as `fl owner` and the board show it."""
+    since = nudged_since(state)
+    return {"name": state.owner.dst if state.owner else "",
+            "since": state.owner.ts.isoformat() if state.owner else None,
+            "open": len(conflicts(state, *CONFLICT_WINDOWS)),
+            "nudged_since": since.isoformat() if since else None,
+            "claimable": bool(state.owner and since and now - since >= NUDGE_AFTER)}
+
+
+def submit_owner(ctx: Context, to: str, event_id: str | None = None) -> Outcome:
+    """OWNER: hand the field-ops owner over, take it when there's none, or claim it after an
+    unanswered nudge. An ordinary, attributed event either way."""
+    state = current_state(ctx)
+    name, verdict = validate_owner(ctx.actor, to, store.read_people(ctx.ledger_dir), state,
+                                   ctx.now(), nudged_since(state), NUDGE_AFTER)
+    if name is None:
+        return Outcome(verdict)
+    return write(ctx, verdict, "OWNER", event_id, (),
+                 src=state.owner.dst if state.owner else "", dst=name)
 
 
 def open_conflicts(state: State, windows: tuple[timedelta, timedelta] = CONFLICT_WINDOWS

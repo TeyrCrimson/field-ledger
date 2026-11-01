@@ -22,6 +22,7 @@ import { button, describeWrite, dialogCss } from "./components/dom.js";
 import { itemCard, markCard, unmarkCard, css as cardCss } from "./components/item-card.js";
 import { icon } from "./icons.js";
 import { needsLook, css as needsCss } from "./components/needs-look.js";
+import { nudgeBanner, ownerDialog, css as ownerCss } from "./components/owner.js";
 import { peoplePicker, css as peopleCss } from "./components/people.js";
 import { show, toast, css as toastCss } from "./components/toast.js";
 import { unsyncedBadge, css as unsyncedCss } from "./components/unsynced.js";
@@ -31,7 +32,7 @@ const TOAST_MS = 15_000;
 
 const style = document.createElement("style");
 style.textContent = [dialogCss, columnCss, cardCss, actionCss, addCss, confirmCss, peopleCss,
-                     toastCss, needsCss, unsyncedCss, addPhoneCss, auditCss].join("\n");
+                     toastCss, needsCss, unsyncedCss, addPhoneCss, auditCss, ownerCss].join("\n");
 document.head.append(style);
 
 let latest = { places: [], nodes: [], people: [], needs_look: [] };
@@ -117,6 +118,18 @@ function moveTo(target) {
   if (selected && target !== selected) act("move", { item: selected, to: target });
 }
 
+// The banner's tap: pick the ⚠ card after the one picked now (the first, if none), and
+// bring it into view just above the bar (centring it would put it under a tall bar).
+function showNextConflict() {
+  const open = latest.nodes.filter((node) => node.conflict);
+  if (!open.length) return;
+  const next = open[(open.findIndex((node) => node.id === selected) + 1) % open.length];
+  select(next.id);
+  const card = cardOf(next.id);
+  const barTop = $("actionbar").firstElementChild?.getBoundingClientRect().top ?? innerHeight;
+  if (card) scrollBy(0, card.getBoundingClientRect().bottom - barTop + 16);
+}
+
 function select(id) {
   selected = id;
   const node = id && nodeById(id);
@@ -167,6 +180,9 @@ function render() {
     return section;
   });
   $("board").replaceChildren(...columns);
+  const banner = latest.owner && nudgeBanner(latest.owner, me.name, () => act("owner", { to: me.name }),
+                                             showNextConflict);
+  $("nudge").replaceChildren(...(banner ? [banner] : []));
   $("needs-look").replaceChildren(...(latest.needs_look.length ? [needsLook(latest.needs_look, {
     onLog: (entry) => act("settle", { id: entry.id, how: "log" }),
     onDismiss: (entry) => act("settle", { id: entry.id, how: "dismiss" }),
@@ -238,6 +254,7 @@ function renderHeader() {
     ...(unsynced() ? [unsyncedBadge(unsynced())] : []),
     button(me.name ? `You: ${me.name}` : "Who are you?", "", () => pickName(false)),
     button("+ Add items", "", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))),
+    button(`Owner: ${latest.owner?.name || "nobody"}`, "", openOwner),
     button(`Audit (${latest.audit?.due.length ?? 0})`, "", openAudit),
     button("Undo my last", "", () => act("undo")),
     withIcon(button("Add a phone", "", addPhone), "phone"),
@@ -263,6 +280,12 @@ function redrawAudit() {
   if (!auditOpen) return;
   auditOpen.replaceChildren(...drawAudit().childNodes);
   toastsHome().append(toasts);                          // it was inside, unless a dialog is above
+}
+
+function openOwner() {
+  const owner = latest.owner ?? { name: "", open: 0, claimable: false };
+  const dialog = ownerDialog(owner, latest.people, me.name, (to) => { dialog.close(); act("owner", { to }); });
+  showDialog(dialog);
 }
 
 async function addPhone() {

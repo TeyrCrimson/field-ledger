@@ -234,14 +234,29 @@ fl resolve BAT-01 van
 ```
 
 An imported line counts as an approximate time (`time_source: import`, stored on the event),
-so it gets the 60-minute window. In v0 its time is when it was imported. The bot nudge and the
-field-ops owner are **planned**. A ⚠ older than `nudge_after` gets a bot nudge to the
-ledger's **field-ops owner**.
+so it gets the 60-minute window. In v0 its time is when it was imported.
 
-**Every ledger has a field-ops owner**, picked from the People list when the ledger is created.
-Nothing can be moved until one is set. Handover is its own event (`OWNER teyr → ivan`). Only the current owner can
-hand over, except that anyone may claim ownership once a nudge has gone unanswered for
-`nudge_after`; the claim is an ordinary, attributed `OWNER` event.
+**Every ledger has a field-ops owner**, who settles the ⚠s. **v0**:
+
+```bash
+fl owner                 # Field-ops owner: teyr / 1 ⚠ to settle; nudged since 2026-10-30T14:02
+fl owner ivan            # OWNER teyr → Ivan (a name from the People list)
+```
+
+- `fl init` makes whoever creates the ledger its owner. **Nothing can be moved in a ledger
+  with no owner** (moves, deploys, ⚠ settles, an audit's "found elsewhere"): someone has to be
+  there to settle the ⚠s. A ledger made before owners existed has none; anyone may take it
+  (`fl owner <name>`, **Owner** on the board, or `fl init <name>` again), once.
+- Only the current owner hands over, to anyone on the People list. Handover is its own,
+  attributed event (`OWNER teyr → Ivan`), and `undo` takes it back.
+- While a ⚠ is open, the owner is **nudged**: the board shows a banner to everyone. The nudge
+  runs from the oldest open ⚠, or from when this owner took over if that was later, and
+  settling the ⚠s answers it. It's worked out on every read; nothing is written.
+- Once a nudge has gone unanswered for `nudge_after` (1 day; every day counts), anyone may
+  claim the owner for themselves (not for someone else). The claim is an `OWNER` event
+  flagged `claimed`.
+- A handover needs the hub: who may do it depends on the owner and the nudge as they are now.
+  The Telegram nudge comes with the relay.
 
 ---
 
@@ -353,8 +368,9 @@ builds never do. `fl move BAT-01 BAT-02` is refused: `BAT-02 can't hold things`.
 chain and last event; a build's commit and label; an item's `state` and its kind's `states`
 (only for kinds that have states); any ⚠ with both places; the People list;
 `needs_look`, the held writes nobody has settled; `audit`: `since` (today's start), `due` (ids)
-and today's `mismatches` (`item`, `logged`, `found`, `by`, `at`, `event`).
-`POST /api/move | undo | resolve | label | state | audit | add` takes JSON naming the person (`actor`, from the
+and today's `mismatches` (`item`, `logged`, `found`, `by`, `at`, `event`); `owner`: `name`,
+`since`, `open` (⚠s), `nudged_since`, `claimable`.
+`POST /api/move | undo | resolve | label | state | audit | owner | add` takes JSON naming the person (`actor`, from the
 People list) and the browser (`device`), runs the same service functions as `fl`, and answers
 `{verdict, messages, event, readback}`. A refusal is a verdict, not an error; a malformed request
 is a 400. A phone adds `id` (a lowercase UUID, logged once), `occurred_at` (ISO, with a zone) and
@@ -631,13 +647,13 @@ Never commit them. Copying the token file is part of takeover.
 | `id_digits` | `2` | Minimum width of the ID number |
 | `undo_minutes` | `10` | How long the one-tap Undo is offered |
 | `conflict_window` | `5 min` device / `60 min` prompted or import | How close two moves must be to get a ⚠ |
-| `nudge_after` | `1` working day | When an unresolved ⚠ nudges the field-ops owner |
+| `nudge_after` | `1` day | When an unresolved ⚠ nudges the field-ops owner. Every day counts: no guessing at workdays or public holidays |
 | `ledger_dir` | `./ledger` | Where the ledger's own repo lives |
 | `build_home` | `hq` | Where a build is before its first deploy. **v0**: `fl set build_home <location>`; stored in the ledger repo's `settings.json`, so every device shares it |
 
 **v0**: only `build_home` can be changed (`fl set`). `ledger_dir` comes from `--ledger-dir` or
 `FL_LEDGER_DIR`. `undo_minutes` and `conflict_window` are in force at their defaults but fixed.
-`id_digits` and `nudge_after` are **planned**.
+`nudge_after` is in force at 1 day but fixed. `id_digits` is **planned**.
 
 ---
 

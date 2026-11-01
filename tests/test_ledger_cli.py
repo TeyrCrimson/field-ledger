@@ -76,7 +76,7 @@ def test_rebuild_from_the_event_files(tmp_path, capsys):
     assert fl(db, "init", "teyr") == 0            # a fresh cache over the same ledger
     capsys.readouterr()
     assert fl(db, "rebuild") == 0
-    assert "3 event(s)" in capsys.readouterr().out
+    assert "4 event(s)" in capsys.readouterr().out      # the kit's three, and init's OWNER
     assert fl(db, "where", "BAT-03") == 0
 
 

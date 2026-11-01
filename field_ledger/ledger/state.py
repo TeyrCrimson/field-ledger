@@ -35,6 +35,7 @@ class State:
     labels: dict[str, str] = field(default_factory=dict)       # build -> security label (SEC)
     conditions: dict[str, str] = field(default_factory=dict)   # item -> its state (STATE)
     configs: dict[str, Event] = field(default_factory=dict)    # build -> its latest CFG
+    owner: Event | None = None                                 # the latest OWNER: who and since when
     containers: set[str] = field(default_factory=set)          # kinds that hold things (settings)
     kind_states: dict[str, list[str]] = field(default_factory=dict)  # kind -> its states (settings)
     chain_before: dict[str, list[str]] = field(default_factory=dict)  # move id -> item's ancestors then
@@ -124,12 +125,29 @@ def apply(state: State, event: Event) -> None:
         state.conditions[event.item] = event.dst
     elif event.kind == "CFG":           # latest wins: what the build runs with now
         state.configs[event.item] = event
+    elif event.kind == "OWNER":
+        state.owner = event
     state.events.append(event)
 
 
 def conflicts(state: State, device_window: timedelta,
               import_window: timedelta) -> dict[str, tuple[str, str]]:
-    """Node -> (where the log has it, the other candidate): README "When two moves disagree".
+    return {node: places for node, (_, places) in
+            find_conflicts(state, device_window, import_window).items()}
+
+
+def conflict_starts(state: State, device_window: timedelta,
+                    import_window: timedelta) -> dict[str, datetime]:
+    """Node -> when its open ⚠ began (the later of the two moves): the owner's nudge runs
+    from then, and nothing is written for it."""
+    return {node: clock(state.events[k]) for node, (k, _) in
+            find_conflicts(state, device_window, import_window).items()}
+
+
+def find_conflicts(state: State, device_window: timedelta,
+                   import_window: timedelta) -> dict[str, tuple[int, tuple[str, str]]]:
+    """Node -> (index of the later move, (where the log has it, the other candidate)):
+    README "When two moves disagree".
 
     Two live moves conflict on a node when both affect its location (directly, or by
     moving a container it was in), within the window (the wider one if either time is
@@ -166,7 +184,7 @@ def conflicts(state: State, device_window: timedelta,
         here = state.where.get(node, "")
         other = one if resolve(one, state.aliases) != here else two
         if resolve(other, state.aliases) != here:
-            result[node] = (here, resolve(other, state.aliases))
+            result[node] = (k, (here, resolve(other, state.aliases)))
     return result
 
 

@@ -16,7 +16,7 @@ import pytest
 
 from field_ledger import hub
 from field_ledger.cli import main
-from field_ledger.ledger import service
+from field_ledger.ledger import service, store
 from field_ledger.ledger.model import Move
 from field_ledger.ledger.state import fold
 from field_ledger.ledger.store import read_events
@@ -66,9 +66,9 @@ def test_state_json_is_the_replay(ledger):
         server.shutdown()
     served = json.loads(body)
     state = fold(read_events(ledger))
-    expected = hub.snapshot(state, service.open_conflicts(state), Clock()())
+    expected = hub.snapshot(state, service.open_conflicts(state), Clock()(), store.read_people(ledger))
     assert status == 200 and kind == "application/json"
-    timed = ("generated_at", "audit")          # the hub runs on real time; audit: test_audit.py
+    timed = ("generated_at", "audit", "owner")  # the hub runs on real time; test_audit/test_owner
     assert {k: v for k, v in served.items() if k not in timed} == \
         {k: v for k, v in expected.items() if k not in timed}
     nodes = {n["id"]: n for n in served["nodes"]}

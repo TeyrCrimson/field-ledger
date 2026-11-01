@@ -120,11 +120,11 @@ def test_label_a_build_from_the_board(tmp_path, board):
 def test_joining_adds_a_person_once(board):
     base, ledger, _ = board
     status, answer = post(base, "people", name="  Ivan  Tan ")
-    assert answer["name"] == "Ivan Tan" and answer["people"] == ["Yoeng", "Ivan Tan"]
+    assert answer["name"] == "Ivan Tan" and answer["people"] == ["teyr", "Yoeng", "Ivan Tan"]
     status, again = post(base, "people", name="ivan tan")
-    assert again["name"] == "Ivan Tan" and again["people"] == ["Yoeng", "Ivan Tan"]
+    assert again["name"] == "Ivan Tan" and again["people"] == ["teyr", "Yoeng", "Ivan Tan"]
     assert json.loads(urllib.request.urlopen(f"{base}/state.json").read())["people"] == \
-        ["Yoeng", "Ivan Tan"]
+        ["teyr", "Yoeng", "Ivan Tan"]
 
 
 @pytest.mark.parametrize("body", [

@@ -5,8 +5,10 @@ Usage:
     python -m field_ledger show feat/x --repo ~/github-repos/casio-edge
     python -m field_ledger deploy feat/x site-b --repo ~/github-repos/casio-edge
     python -m field_ledger label feat/x CRIT exposes the CDR port
+    python -m field_ledger cfg feat/x deploy/site-b.yaml@HEAD --repo ~/github-repos/casio-edge
     python -m field_ledger undo
     python -m field_ledger serve --lan
+    python -m field_ledger hub-ca export casio-ca.p12
     python -m field_ledger --repo ~/github-repos/casio-edge --base origin/develop --prs gh
 
 `deploy` and `undo` write to the same ledger as `fl`, through the same service layer.
@@ -14,13 +16,17 @@ Usage:
 
 import argparse
 import os
+import re
+import shutil
+import subprocess
 import sys
 from dataclasses import replace
 from collections.abc import Callable
 from datetime import datetime, timezone
+from getpass import getpass
 from pathlib import Path
 
-from . import hub, qr, tls
+from . import hub, qr, relay, tls
 from .classify import build_row, days_between, sort_rows
 from .git_source import is_merged, last_commit, list_branches, run_git
 from .ledger import service, store
@@ -162,6 +168,8 @@ def ledger_lines(ledger_dir: Path, branch: str, head: str) -> list[str]:
         if sha and head != sha:
             lines.append(f"moved on since deploy: deployed as {sha[:7]}, head is now {head[:7]}")
     lines.append(f"security label: {state.labels.get(branch, 'none set')}")
+    config = state.configs.get(branch)
+    lines.append(f"config: {config.dst[:12]} ({config.src})" if config else "config: none recorded")
     return lines
 
 
@@ -246,6 +254,40 @@ def do_label(argv: list[str], now: Callable[[], datetime]) -> int:
     return 0
 
 
+def do_cfg(argv: list[str], now: Callable[[], datetime]) -> int:
+    """`field-ledger cfg <branch> <file|path@commit>...`: a build's config, hashed here from the
+    files themselves; no hash is ever typed. `--check` is the audit's half: point it at a copy
+    of what's deployed, and a difference is logged as a mismatch."""
+    p = argparse.ArgumentParser(prog="field-ledger cfg",
+                                description="Record a build's config. The ledger reads the files "
+                                            "and computes their SHA-256 itself.")
+    p.add_argument("branch")
+    p.add_argument("refs", nargs="+", metavar="file",
+                   help="a file, or path@commit in --repo; several for a chart and its values")
+    p.add_argument("--repo", type=Path, default=Path("."), help="the code repo, for path@commit")
+    p.add_argument("--reason", default="", help="optional: why it changed, kept on the event")
+    p.add_argument("--check", action="store_true",
+                   help="audit: compare a copy of the deployed config with the record")
+    ledger_args(p)
+    args = p.parse_args(argv)
+    ctx = open_ledger(args.ledger_dir, args.db, args.actor, now)
+    before = service.current_state(ctx)
+    outcome = service.submit_config(ctx, args.branch, args.refs, args.repo, args.reason, args.check)
+    if outcome.event is None:
+        if outcome.verdict.kind == Kind.IGNORE:          # a match, or nothing new: not an error
+            print(f"✓ {outcome.verdict.messages[0]}")
+            return 0
+        return report(outcome)
+    e, recorded = outcome.event, before.configs.get(outcome.event.item)
+    where = location_of(before, e.item) or "—"
+    if args.check:
+        print(f"CFG {e.item} · {where} · recorded {recorded.dst[:8]}, found {e.dst[:8]}: a mismatch")
+    else:
+        print(f"CFG {e.item} · {where} · was {recorded.dst[:8] if recorded else '—'} → {e.dst[:8]}")
+    print(f"  logged: {render_event(e)}")
+    return 0
+
+
 def start_https(the_hub, address: str):
     """HTTPS for phones, on the same port: the hub's CA (made once) signs a certificate for
     the address it has now. Without openssl the board still works, just not offline."""
@@ -260,6 +302,82 @@ def start_https(the_hub, address: str):
     the_hub.ca_cert, the_hub.ca_name = folder / "ca.crt", tls.ca_name(folder)
     print(f"  HTTPS on the same port, as \"{the_hub.ca_name}\".")
     return tls.context(folder)
+
+
+def do_hub_ca(argv: list[str]) -> int:
+    """`field-ledger hub-ca`: the CA phones trust, shared by a team's hub laptops so a phone
+    sets up once for any of them."""
+    p = argparse.ArgumentParser(prog="field-ledger hub-ca",
+                                description="Show this laptop's hub CA, make a team's, or carry "
+                                            "it to another hub laptop.")
+    p.add_argument("action", nargs="?", choices=["new", "export", "import"])
+    p.add_argument("arg", nargs="?", help="new: the team name; export / import: the file")
+    p.add_argument("--replace", action="store_true",
+                   help="new / import: replace this laptop's CA (its phones set up again)")
+    args = p.parse_args(argv)
+    if not tls.available():
+        print("REJECT\n  The hub CA needs the `openssl` command.")
+        return 1
+    folder = tls.ca_dir()
+    have = (folder / "ca.crt").exists()
+    if args.action and not args.arg:
+        p.error(f"{args.action} needs {'a team name' if args.action == 'new' else 'a file'}")
+    if args.action is None or args.action == "export":
+        if not have:
+            print("No hub CA on this laptop yet: `field-ledger hub-ca new <team>` makes one "
+                  "(`serve --lan` makes one without a team).")
+            return 1 if args.action else 0
+        if args.action is None:
+            print(f"\"{tls.ca_name(folder)}\", until {tls.ca_expires(folder)}, in {folder}")
+            return 0
+        return export_ca(folder, Path(args.arg))
+    if have and not args.replace:
+        print(f"REJECT\n  This laptop already has \"{tls.ca_name(folder)}\". --replace swaps it; "
+              "phones set up for it then set up again.")
+        return 1
+    if args.action == "new":
+        if not re.fullmatch(r"[\w -]{1,30}", args.arg):
+            print("REJECT\n  A team name is up to 30 letters, digits, spaces or hyphens.")
+            return 1
+        old = have and tls.ca_name(folder)
+        shutil.rmtree(folder, ignore_errors=True)
+        tls.ensure_ca(folder, args.arg)
+    else:
+        staging = folder.with_name("hub-ca.import")
+        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            tls.unpack(Path(args.arg), getpass("Passphrase: "), staging)
+        except ValueError as error:
+            shutil.rmtree(staging)
+            print(f"REJECT\n  {error}.")
+            return 1
+        old = have and tls.ca_name(folder)
+        if have and (staging / "ca.crt").read_bytes() == (folder / "ca.crt").read_bytes():
+            shutil.rmtree(staging)
+            print(f"\"{old}\" is already this laptop's CA.")
+            return 0
+        shutil.rmtree(folder, ignore_errors=True)
+        staging.rename(folder)
+    print(f"✓ \"{tls.ca_name(folder)}\", until {tls.ca_expires(folder)}, in {folder}")
+    if old:
+        print(f"  Phones set up for \"{old}\" must remove it and scan the hub's QR code again.")
+    return 0
+
+
+def export_ca(folder: Path, out: Path) -> int:
+    inside_repo = subprocess.run(["git", "-C", str(out.resolve().parent), "rev-parse"],
+                                 capture_output=True).returncode == 0
+    if inside_repo:
+        print(f"REJECT\n  {out} is inside a Git repo; the CA's key never goes in one.")
+        return 1
+    passphrase = getpass("Passphrase for the file: ")
+    if not passphrase or passphrase != getpass("Again: "):
+        print("REJECT\n  The passphrase was empty or didn't match.")
+        return 1
+    tls.export(folder, out, passphrase)
+    print(f"✓ \"{tls.ca_name(folder)}\" → {out}. On the other laptop: "
+          f"`field-ledger hub-ca import {out.name}`, with the same passphrase.")
+    return 0
 
 
 def do_serve(argv: list[str]) -> int:
@@ -293,6 +411,10 @@ def do_serve(argv: list[str]) -> int:
         print(qr.terminal(qr.encode(the_hub.setup_url)))
     if not store.read_people(args.ledger_dir):
         print("  No People yet: the first person to open the board adds their name.")
+    token = relay.read_token()
+    if token:
+        relay.start(the_hub, token)
+        print("Relay: polling the Telegram bot (only one hub may). Links: `fl people link <name>`.")
     print("Ctrl-C stops it.")
     try:
         server.serve_forever()
@@ -325,8 +447,12 @@ def main(argv: list[str] | None = None, ask: Ask = ask_tty,
         return do_deploy(argv[1:], now, ask)
     if argv and argv[0] == "label":
         return do_label(argv[1:], now)
+    if argv and argv[0] == "cfg":
+        return do_cfg(argv[1:], now)
     if argv and argv[0] == "serve":
         return do_serve(argv[1:])
+    if argv and argv[0] == "hub-ca":
+        return do_hub_ca(argv[1:])
     if argv and argv[0] == "undo":
         return do_undo(argv[1:], now)
     args = parse_args(argv)

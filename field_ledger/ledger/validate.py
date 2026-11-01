@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from .ids import canonical_item, canonical_location, suggest
 from .model import Kind, Move, Rename, Verdict, Void
-from .state import State, ancestors, makes_cycle, resolve
+from .state import LOST, State, ancestors, makes_cycle, resolve
 
 DUPLICATE_WINDOW = timedelta(minutes=2)
 
@@ -61,6 +61,16 @@ def holds_things(node: str, state: State) -> bool:
 
 
 # --- individual checks ---------------------------------------------------------
+
+def check_owner(state: State) -> Verdict | None:
+    """Nothing moves until the ledger has a field-ops owner (Teyr, 2026-10-30): someone has
+    to be there to settle the ⚠s that moves can raise. `fl init` makes its creator the owner,
+    so this only stops a ledger made before owners existed, once."""
+    if state.owner is not None:
+        return None
+    return Verdict(Kind.REJECT, ("This ledger has no field-ops owner yet, so nothing can be "
+                                 "moved. `fl owner <name>` (or Owner on the board) sets one.",))
+
 
 def check_item(raw: str, state: State) -> tuple[str | None, Verdict | None]:
     """Return (canonical id, None) if the node exists, else (None, REJECT)."""
@@ -151,7 +161,11 @@ def check_duplicate(item: str, dst: str, actor: str, state: State,
     last = state.last_event.get(item)
     if (last and last.kind == "MOVE" and last.actor == actor
             and resolve(last.dst, state.aliases) == dst and now - last.ts <= DUPLICATE_WINDOW):
-        return Verdict(Kind.IGNORE, (f"Already logged {item} -> '{dst}' at {last.ts:%H:%M}.",))
+        # How long ago, not a clock time: events keep the zone they were stamped in (a phone's
+        # is UTC), and this module can't know the reader's. 23:59 showed as 15:59 (2026-11-01).
+        minutes = max(0, int((now - last.ts).total_seconds() // 60))
+        ago = "just now" if minutes == 0 else f"{minutes} min ago"
+        return Verdict(Kind.IGNORE, (f"Already logged {item} -> '{dst}' {ago}.",))
     return None
 
 
@@ -176,6 +190,8 @@ def validate_move(cmd: Move, actor: str, state: State, now: datetime) -> tuple[s
     item, bad = check_item(cmd.item, state)
     if bad:
         return None, bad
+    if no_owner := check_owner(state):
+        return None, no_owner
     shape = check_id_destination(cmd.dst, state)
     if shape and shape.kind == Kind.REJECT:
         return item, shape
@@ -209,6 +225,110 @@ def validate_label(raw: str, label: str, state: State) -> tuple[str | None, str,
     return item, label, Verdict(Kind.ACCEPT)
 
 
+def validate_state(raw: str, value: str, state: State) -> tuple[str | None, str, Verdict]:
+    """A state is one of its kind's own list (a battery: ready / depleted / ...), so the
+    board can offer them as buttons and an audit can count them. Places and builds have
+    none: a build's condition is its security label. Returns (item, state, verdict)."""
+    item, bad = check_item(raw, state)
+    if bad:
+        return None, "", bad
+    if item in state.fixed or state.items[item] == "build":
+        what = "a place" if item in state.fixed else "a build; it carries a security label"
+        return None, "", Verdict(Kind.REJECT, (f"{item} is {what}, not kit with a state.",))
+    kind = (canonical_item(item) or "").split("-")[0]
+    states = state.kind_states.get(kind, [])
+    if not states:
+        return None, "", Verdict(Kind.REJECT, (
+            f"{kind or item} has no states yet. `fl kind {kind or 'XXX'} states ready depleted` "
+            f"sets them.",))
+    value = value.strip().lower()
+    if value not in states:
+        return None, "", Verdict(Kind.REJECT, (f"'{value}' is not a {kind} state. Use one of "
+                                               f"{' / '.join(states)}.",))
+    return item, value, Verdict(Kind.ACCEPT)
+
+
+def validate_audit(raw: str, found: str, state: State) -> tuple[str | None, str, Verdict]:
+    """An audit check: the item is where the log has it (`found` empty), somewhere else, or
+    missing (found in Lost). Anywhere but the logged place is a mismatch, written all the
+    same: the audit says what's true. Returns (item, where it was found, verdict)."""
+    item, bad = check_item(raw, state)
+    if bad:
+        return None, "", bad
+    if item in state.fixed or state.items[item] == "build":
+        what = "a place" if item in state.fixed else "a build; its config is checked by CFG"
+        return None, "", Verdict(Kind.REJECT, (f"{item} is {what}, not kit to audit.",))
+    here = state.where.get(item, "")
+    if not found.strip():
+        return item, here, Verdict(Kind.ACCEPT)
+    shape = check_id_destination(found, state)
+    if shape and shape.kind == Kind.REJECT:
+        return None, "", shape
+    dst = resolve(canonical_destination(found, state), state.aliases)
+    stop = check_owner(state) or check_container(dst, state) or check_cycle(item, dst, state)
+    if stop:
+        return None, "", stop
+    if dst == here:
+        return item, dst, Verdict(Kind.ACCEPT)
+    seen = "missing" if dst == LOST else f"found in {dst}"
+    mismatch = Verdict(Kind.WARN, (f"{item} was logged in {here or 'nowhere'}, {seen}: a mismatch.",),
+                       ("mismatch",))
+    return item, dst, combine([shape, mismatch, check_destination(dst, state)])
+
+
+def validate_config(raw: str, digest: str, state: State, check: bool) -> tuple[str | None, Verdict]:
+    """A config goes on a build. Recording the hash it already has is a repeat. A check (the
+    audit, against a copy of what's deployed) is a mismatch when the hash differs, written
+    all the same: the log follows what was found. Returns (build, verdict)."""
+    item, bad = check_item(raw, state)
+    if bad:
+        return None, bad
+    if state.items[item] != "build":
+        return None, Verdict(Kind.REJECT, (f"{item} is not a build; only builds carry a config.",))
+    recorded = state.configs.get(item)
+    if check and recorded is None:
+        return None, Verdict(Kind.REJECT, (f"No config recorded for {item} yet, so nothing to "
+                                           f"check against. `field-ledger cfg {item} <file>` "
+                                           f"records one.",))
+    if recorded and recorded.dst == digest:
+        what = "matches the record" if check else "is already recorded"
+        return item, Verdict(Kind.IGNORE, (f"{item}'s config {what} ({digest[:8]}).",))
+    if check:
+        return item, Verdict(Kind.WARN, (f"{item}'s config at the site is not the one recorded: "
+                                         f"recorded {recorded.dst[:8]}, found {digest[:8]}. "
+                                         f"A mismatch.",), ("mismatch",))
+    return item, Verdict(Kind.ACCEPT)
+
+
+def validate_owner(actor: str, to: str, people: list[str], state: State, now: datetime,
+                   nudged_since: datetime | None, nudge_after: timedelta) -> tuple[str | None, Verdict]:
+    """Who may write OWNER (Design Doc §3, Trust): the current owner hands over to anyone on
+    the People list; with no owner yet, anyone takes it. Otherwise only a claim for yourself,
+    once the owner's nudge (the oldest open ⚠, `nudged_since`) has gone unanswered for
+    `nudge_after`. Every day counts. Returns (the new owner as the list spells it, verdict)."""
+    name = next((p for p in people if p.casefold() == " ".join(to.split()).casefold()), None)
+    if name is None:
+        return None, Verdict(Kind.REJECT, (f"'{to}' isn't on the People list.",))
+    current = state.owner.dst if state.owner else ""
+    if name == current:
+        return None, Verdict(Kind.IGNORE, (f"{name} is already the field-ops owner.",))
+    if not current or actor == current:
+        return name, Verdict(Kind.ACCEPT)
+    if name != actor:
+        return None, Verdict(Kind.REJECT, (f"Only {current} can hand the field-ops owner over.",))
+    waited = now - nudged_since if nudged_since else None
+    if waited is None or waited < nudge_after:
+        when = (f" A ⚠ has waited {hours(waited)}; after {hours(nudge_after)}, anyone can take over."
+                if waited is not None else " Anyone can take over once a ⚠ nudge goes unanswered.")
+        return None, Verdict(Kind.REJECT, (f"Only {current} can hand the field-ops owner over.{when}",))
+    return name, Verdict(Kind.WARN, (f"{current} left a ⚠ unanswered for {hours(waited)}: "
+                                     f"{name} takes over.",), ("claimed",))
+
+
+def hours(span: timedelta) -> str:
+    return f"{int(span.total_seconds() // 3600)} h"
+
+
 def validate_resolve(raw: str, pick: str, state: State,
                      open_: dict[str, tuple[str, str]]) -> tuple[str | None, str, Verdict]:
     """RESOLVE settles a ⚠ by confirming one of its two candidates; anyone may."""
@@ -220,13 +340,15 @@ def validate_resolve(raw: str, pick: str, state: State,
     pick = resolve(canonical_destination(pick, state), state.aliases)
     if pick not in open_[item]:
         return None, "", Verdict(Kind.REJECT, (f"Pick one of {open_[item][0]} or {open_[item][1]}.",))
+    if no_owner := check_owner(state):
+        return None, "", no_owner
     return item, pick, Verdict(Kind.ACCEPT)
 
 
 def validate_deploy(branch: str, dst: str, state: State) -> Verdict:
     """A deploy is a move of a branch node, except that the node may not exist yet, so
     `check_item` does not apply. Everything else about a move does."""
-    bad = check_container(dst, state)
+    bad = check_owner(state) or check_container(dst, state)
     if bad:
         return bad
     if branch not in state.items:

@@ -19,6 +19,10 @@ from datetime import datetime, timedelta
 
 from .model import Event
 
+# ponytail: the one external location the audit knows by name; give places an `external` flag
+# when custody exits (Logistics store) need to stop being due too.
+LOST = "lost"
+
 
 @dataclass
 class State:
@@ -29,7 +33,11 @@ class State:
     fixed: set[str] = field(default_factory=set)               # location nodes: hold nodes, rarely move
     aliases: dict[str, str] = field(default_factory=dict)      # old location -> new
     labels: dict[str, str] = field(default_factory=dict)       # build -> security label (SEC)
+    conditions: dict[str, str] = field(default_factory=dict)   # item -> its state (STATE)
+    configs: dict[str, Event] = field(default_factory=dict)    # build -> its latest CFG
+    owner: Event | None = None                                 # the latest OWNER: who and since when
     containers: set[str] = field(default_factory=set)          # kinds that hold things (settings)
+    kind_states: dict[str, list[str]] = field(default_factory=dict)  # kind -> its states (settings)
     chain_before: dict[str, list[str]] = field(default_factory=dict)  # move id -> item's ancestors then
     carried: dict[str, set[str]] = field(default_factory=dict)  # move id -> every node it moved
     voided: set[str] = field(default_factory=set)
@@ -95,7 +103,9 @@ def apply(state: State, event: Event) -> None:
             state.fixed.add(event.item)
     # ponytail: a cycle can only arrive from two offline devices; it is skipped here
     # (the event stays in the log, voidable) until the conflicts view can show it.
-    moves = event.kind in ("MOVE", "RESOLVE") and not makes_cycle(state, event.item, event.dst)
+    # An audit that found it somewhere else puts it there: the log follows what was seen.
+    moves = (event.kind in ("MOVE", "RESOLVE", "AUD")
+             and not makes_cycle(state, event.item, event.dst))
     if moves:                           # the ⚠ rule needs what each move saw and carried
         state.chain_before[event.id] = ancestors(state, event.item)
         state.carried[event.id] = {event.item} | {
@@ -111,12 +121,33 @@ def apply(state: State, event: Event) -> None:
         state.aliases[event.src] = event.dst
     elif event.kind == "SEC":           # latest wins; a voided one never gets here
         state.labels[event.item] = event.dst
+    elif event.kind == "STATE":         # where it is and what shape it's in are separate
+        state.conditions[event.item] = event.dst
+    elif event.kind == "CFG":           # latest wins: what the build runs with now
+        state.configs[event.item] = event
+    elif event.kind == "OWNER":
+        state.owner = event
     state.events.append(event)
 
 
 def conflicts(state: State, device_window: timedelta,
               import_window: timedelta) -> dict[str, tuple[str, str]]:
-    """Node -> (where the log has it, the other candidate): README "When two moves disagree".
+    return {node: places for node, (_, places) in
+            find_conflicts(state, device_window, import_window).items()}
+
+
+def conflict_starts(state: State, device_window: timedelta,
+                    import_window: timedelta) -> dict[str, datetime]:
+    """Node -> when its open ⚠ began (the later of the two moves): the owner's nudge runs
+    from then, and nothing is written for it."""
+    return {node: clock(state.events[k]) for node, (k, _) in
+            find_conflicts(state, device_window, import_window).items()}
+
+
+def find_conflicts(state: State, device_window: timedelta,
+                   import_window: timedelta) -> dict[str, tuple[int, tuple[str, str]]]:
+    """Node -> (index of the later move, (where the log has it, the other candidate)):
+    README "When two moves disagree".
 
     Two live moves conflict on a node when both affect its location (directly, or by
     moving a container it was in), within the window (the wider one if either time is
@@ -153,7 +184,7 @@ def conflicts(state: State, device_window: timedelta,
         here = state.where.get(node, "")
         other = one if resolve(one, state.aliases) != here else two
         if resolve(other, state.aliases) != here:
-            result[node] = (here, resolve(other, state.aliases))
+            result[node] = (k, (here, resolve(other, state.aliases)))
     return result
 
 
@@ -182,6 +213,30 @@ def fold(events: list[Event]) -> State:
         if event.id not in state.voided:
             apply(state, event)
     return finish(state)
+
+
+def audit_due(state: State, since: datetime) -> list[str]:
+    """Kit nobody has moved or checked since `since`, the start of the deployment day: what
+    the end-of-day audit has to look at. Places and builds aren't kit (a build's config is
+    checked by CFG), and a Lost item can't be checked where it isn't. Being carried inside a
+    case doesn't count: someone handled the case, not what's in it."""
+    touched = {e.item for e in state.events
+               if e.kind in ("ADD", "MOVE", "RESOLVE", "AUD") and clock(e) >= since}
+    return sorted(node for node in state.where
+                  if node not in touched and node not in state.fixed
+                  and state.items.get(node) != "build" and location_of(state, node) != LOST)
+
+
+def mismatches(state: State, since: datetime) -> list[Event]:
+    """Where the log was wrong, since `since`: an audit found it somewhere else (or not at
+    all: found in Lost), a Lost item turned up and was moved out, or a build's config at
+    the site wasn't the one recorded."""
+    def was(e: Event) -> str:
+        return resolve(e.src, state.aliases)
+    return [e for e in state.events if clock(e) >= since and (
+        (e.kind == "AUD" and was(e) != resolve(e.dst, state.aliases))
+        or (e.kind == "MOVE" and was(e) == LOST)
+        or (e.kind == "CFG" and "mismatch" in e.flags))]
 
 
 def items_at(state: State, location: str) -> list[str]:

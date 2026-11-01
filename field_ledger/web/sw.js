@@ -8,7 +8,9 @@
 // when the worker installs (the hub lists them, whatever a design pass adds), so one visit
 // with the hub is enough. A saved answer says so in a header, so the board never claims
 // "Updated" for an old copy.
-// ponytail: a design pass shows on the second open, not the first; the price of opening at once.
+// Opening at once means an update shows on the next open, not this one, so a refresh that
+// brings a board file different from the saved one tells the page, which offers a reload
+// (board.js). It never reloads itself: that could land mid-drag.
 const CACHE = "board";
 const HUB_MS = 1_500;      // under api.js's 3 s, so a hanging hub still gets the board its saved kit
 
@@ -34,7 +36,15 @@ self.addEventListener("fetch", (event) => {
 async function fromHub(request) {
   try {
     const response = await fetch(request, { signal: AbortSignal.timeout(HUB_MS) });
-    if (response.ok) (await caches.open(CACHE)).put(request, response.clone());
+    if (response.ok) {
+      const saved = await caches.match(request);
+      const [keep, check] = [response.clone(), response.clone()];
+      await (await caches.open(CACHE)).put(request, keep);
+      const kit = new URL(request.url).pathname.endsWith("/state.json");
+      if (saved && !kit && await saved.text() !== await check.text()) {
+        for (const client of await self.clients.matchAll()) client.postMessage("updated");
+      }
+    }
     return response;
   } catch (error) {
     const saved = await caches.match(request);

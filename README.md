@@ -37,6 +37,8 @@ fl where BAT-07                      # BAT-07: van (in CAS-01)
 fl resolve BAT-07 van                # settle a ⚠ when two devices disagree
 fl at site-b                         # everything there, including inside cases
 fl flags                             # everything that needs a second look
+fl audit                             # what today's audit still has to check
+fl audit --check                     # ...and check each one: here, elsewhere or missing
 fl undo                              # take back your own last command, within 10 minutes
 fl void <event-id> "wrong battery"   # correct a mistake (history is kept)
 ```
@@ -60,7 +62,8 @@ things but can't be moved on the fast path. Locations can nest too (Site B > Sto
 Moves that would create a loop (the van inside BAT-12) are rejected.
 
 **Location and state are separate.** Where a battery is (its parent) and what's happening to
-it (its state) change independently. Battery states by default:
+it (its state) change independently: a move never changes a state, and a STATE event never
+moves anything. Each kind lists its own states; batteries, for example:
 
 | State | Meaning |
 |---|---|
@@ -69,7 +72,19 @@ it (its state) change independently. Battery states by default:
 | `storage` | Storage-charged for the long term |
 | `damaged` | Puffed or dropped: don't fly it |
 
-Kinds and their states are config, not code: add or edit them freely.
+Kinds and their states are config, not code: they live in the ledger's `settings.json`, so
+every laptop and phone uses the same list. A kind has no states until someone gives it some:
+
+```bash
+fl kind BAT states ready depleted storage damaged   # replaces BAT's list, in the order shown
+fl state BAT-12 depleted flew two sorties           # STATE BAT-12 · Blue 6S · was ready → depleted
+fl where BAT-12                                     # BAT-12: van (in CAS-01) · depleted
+```
+
+A state outside the kind's list is refused with the list. Places have no state, and a build's
+condition is its security label (SEC). The latest state wins, and `undo` brings the previous one
+back. Dropping a state from a list leaves the events that used it alone: the log says what was
+true then. On the board, a picked card shows its kind's states as buttons.
 
 **Only log containment that lasts beyond a work session.** A battery's parent is its case,
 charger station or van, never the drone it is flying in. Test: *would I chase someone about
@@ -79,7 +94,7 @@ where this is tomorrow?* If not, it isn't a parent.
 
 Status: **v0** has nesting, and `field-ledger deploy` creates its destination as a fixed
 location node (moving one asks for confirmation). Locations named by `fl move` are still
-free text, and older ledgers full of them keep working. Kinds and states are **planned**.
+free text, and older ledgers full of them keep working. Kit states are **v0** (`fl state`).
 
 ---
 
@@ -219,14 +234,29 @@ fl resolve BAT-01 van
 ```
 
 An imported line counts as an approximate time (`time_source: import`, stored on the event),
-so it gets the 60-minute window. In v0 its time is when it was imported. The bot nudge and the
-field-ops owner are **planned**. A ⚠ older than `nudge_after` gets a bot nudge to the
-ledger's **field-ops owner**.
+so it gets the 60-minute window. In v0 its time is when it was imported.
 
-**Every ledger has a field-ops owner**, picked from the People list when the ledger is created.
-Nothing can be moved until one is set. Handover is its own event (`OWNER teyr → ivan`). Only the current owner can
-hand over, except that anyone may claim ownership once a nudge has gone unanswered for
-`nudge_after`; the claim is an ordinary, attributed `OWNER` event.
+**Every ledger has a field-ops owner**, who settles the ⚠s. **v0**:
+
+```bash
+fl owner                 # Field-ops owner: teyr / 1 ⚠ to settle; nudged since 2026-10-30T14:02
+fl owner ivan            # OWNER teyr → Ivan (a name from the People list)
+```
+
+- `fl init` makes whoever creates the ledger its owner. **Nothing can be moved in a ledger
+  with no owner** (moves, deploys, ⚠ settles, an audit's "found elsewhere"): someone has to be
+  there to settle the ⚠s. A ledger made before owners existed has none; anyone may take it
+  (`fl owner <name>`, **Owner** on the board, or `fl init <name>` again), once.
+- Only the current owner hands over, to anyone on the People list. Handover is its own,
+  attributed event (`OWNER teyr → Ivan`), and `undo` takes it back.
+- While a ⚠ is open, the owner is **nudged**: the board shows a banner to everyone. The nudge
+  runs from the oldest open ⚠, or from when this owner took over if that was later, and
+  settling the ⚠s answers it. It's worked out on every read; nothing is written.
+- Once a nudge has gone unanswered for `nudge_after` (1 day; every day counts), anyone may
+  claim the owner for themselves (not for someone else). The claim is an `OWNER` event
+  flagged `claimed`.
+- A handover needs the hub: who may do it depends on the owner and the nudge as they are now.
+  The Telegram nudge comes with the relay.
 
 ---
 
@@ -235,9 +265,9 @@ hand over, except that anyone may claim ownership once a nudge has gone unanswer
 | Piece | What it is |
 |---|---|
 | **Network** | A travel router (preferred) or a phone hotspot. Laptops join as normal clients. Don't use a laptop hotspot |
-| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation). **v0**: serves the board and takes its writes, including ones that waited on a phone (see "The hub" below) |
+| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation), and set its clock and timezone to the site's: the audit's midnight and a time typed to the bot (`14:30`) are both read on the hub's clock. **v0**: serves the board and takes its writes, including ones that waited on a phone (see "The hub" below) |
 | **Phones** | Open the board in a browser and add it to the home screen. Moves queue on the phone if the hub is unreachable and send when it's back. **v0**: yes; and on a phone added by QR code the board opens with no hub too (see "Phones offline") |
-| **Relay** | When phones can't reach the hub (company or public Wi-Fi, or no hub on site), moves go through the Telegram bot. The hub fetches them over outbound HTTPS. The bot carries moves; it is never the record |
+| **Relay** | When phones can't reach the hub (company or public Wi-Fi, or no hub on site), moves go through the Telegram bot. The hub fetches them over outbound HTTPS. The bot carries moves; it is never the record. **v0**: yes (see "The relay") |
 | **Backup** | The hub pushes the ledger repo when it has internet |
 
 ### The hub (v0)
@@ -262,11 +292,20 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
 - **⚠:** a card two devices disagree on shows both places; pick it and tap where it really is.
 - **Builds:** pick one to set its security label. **+ Add items** creates N more of a kind at a
   place, without the CLI.
+- **Audit (N):** the end-of-day check. It lists, by place, every piece of kit nobody has moved
+  or checked since midnight (on the hub's clock; every day counts). One tap each: **✓ Here**
+  (nothing moves), **Elsewhere…** (it's put where it was found) or **Missing** (it goes to
+  `lost`). Each check is an AUD event, written as it's tapped and queued offline like a move.
+  Found elsewhere or missing is a **mismatch**, and so is a Lost item turning up; the screen
+  and `fl audit` list today's. `fl audit --check` is the same screen in a terminal, one item at
+  a time. Checks are only made on an audit screen, never typed as a command, so a check never
+  poses as a move. Places and builds aren't audited (a build's config is CFG's
+  job), and a case being checked doesn't check what's inside it.
 
 `fl people` lists the names; `fl people add <name>` adds one; `fl init` adds its own.
 
 **Phones offline.** Each write gets its event id, its time (`occurred_at`) and the phone's own
-sequence number when it's tapped. If the hub can't be reached, a move, add, label or resolve
+sequence number when it's tapped. If the hub can't be reached, a move, add, label, state or resolve
 waits on the phone, the header shows **N unsynced**, and the write goes out by itself, oldest
 first, when the hub is back: on reconnecting, on each 10-second refresh, and after each write.
 The hub logs an event id once, so a resend is harmless ("already logged"). Undo and "I'm new"
@@ -310,9 +349,12 @@ plain http, as long as the hub is reachable.
 `~/.local/share/field-ledger/hub-ca/` (never in the ledger repo), and signs the hub a fresh
 certificate for its current address on every start, so the travel router and a phone hotspot
 both work. It can only vouch for private network addresses (192.168.x, 10.x, 172.16–31.x),
-so a phone that trusts it can't be fooled about any site on the internet. Its name says which
-laptop made it and when (`field-ledger hub DESKTOP-1 2026-10`); the setup page shows it, and
-how to remove any other, older "field-ledger hub" certificate. http and HTTPS share the one
+so a phone that trusts it can't be fooled about any site on the internet. Its name says whose
+it is and when (`field-ledger hub casio CA 2026-10`); the setup page shows it, and how to
+remove any other, older "field-ledger hub" certificate. To name it for your team, make it
+before the first `serve --lan`: `field-ledger hub-ca new casio` (without that it's
+`field-ledger hub CA 2026-10`). `field-ledger hub-ca` shows this laptop's CA and when it
+expires (three years). http and HTTPS share the one
 port, so the firewall setup below doesn't change. It needs the `openssl` command (Ubuntu and
 WSL have it); without it the hub says "HTTPS off" and phones use plain http.
 
@@ -323,9 +365,12 @@ file's `container` column (`yes`/`no`), with `fl add CAS 2 --at truck --containe
 builds never do. `fl move BAT-01 BAT-02` is refused: `BAT-02 can't hold things`.
 
 **What it serves.** `GET /state.json` is the replayed state: every node with its place, container
-chain and last event; a build's commit and label; any ⚠ with both places; the People list;
-`needs_look`, the held writes nobody has settled.
-`POST /api/move | undo | resolve | label | add` takes JSON naming the person (`actor`, from the
+chain and last event; a build's commit and label; an item's `state` and its kind's `states`
+(only for kinds that have states); any ⚠ with both places; the People list;
+`needs_look`, the held writes nobody has settled; `audit`: `since` (today's start), `due` (ids)
+and today's `mismatches` (`item`, `logged`, `found`, `by`, `at`, `event`); `owner`: `name`,
+`since`, `open` (⚠s), `nudged_since`, `claimable`.
+`POST /api/move | undo | resolve | label | state | audit | owner | add` takes JSON naming the person (`actor`, from the
 People list) and the browser (`device`), runs the same service functions as `fl`, and answers
 `{verdict, messages, event, readback}`. A refusal is a verdict, not an error; a malformed request
 is a 400. A phone adds `id` (a lowercase UUID, logged once), `occurred_at` (ISO, with a zone) and
@@ -372,13 +417,51 @@ the letters; `pytest` checks each is 16×16 with a colour for every letter.
   board. Watch for Notepad saving `.wslconfig.txt`; WSL only reads `.wslconfig`. The Ubuntu
   laptops and option 2 are not tried yet.
 
+### The relay (v0)
+
+When phones can't reach the hub (company or public Wi-Fi, mobile data, or no hub on site), their
+writes go through the team's Telegram bot, and the hub fetches them over outbound HTTPS when it
+has internet. The bot carries writes; it is never the record.
+
+**Setting it up (once per team):**
+1. In Telegram, ask **@BotFather** for a new bot (`/newbot`). It gives you a token.
+2. Put the token on the hub laptop, outside both repos: `FL_TELEGRAM_TOKEN=<token>`, or the
+   file `~/.config/field-ledger/telegram-token` (`chmod 600` it). Never commit it.
+3. `field-ledger serve` now polls the bot and prints `Relay: on, as @<bot>` once it reaches
+   Telegram. Only one hub may poll a bot at a time.
+4. Link each person once: `fl people link Yoeng` prints a one-time code; Yoeng sends
+   `/start <code>` to the bot. The bot answers nobody it doesn't know, so a stranger who
+   finds it learns nothing.
+
+**Using it:**
+- **From the board:** while writes wait on a phone, **Send through Telegram** packs them into
+  messages (a readable line, then `#fl` and the write itself). Copy, open the bot, paste,
+  send. Each write keeps the id, time and sequence number the phone gave it, so the hub logs
+  it once, in the order it was tapped, however often it's sent; one the hub won't log goes on
+  Needs a look. It's logged as the person whose Telegram sent it. The writes stay on the phone
+  too, and the hub answers "already logged" when it's back. Undo, owner and settling need the
+  hub itself.
+- **Typed:** `MOVE BAT-12 > van` to the bot. It asks when ("14:30" or "now"). A clock time is
+  marked `prompted` (approximate, so it gets the 60-minute ⚠ window); `now` is when you sent
+  it, as exact as a phone's own time, so it isn't. `MOVE BAT-12 > van @14:30`
+  gives the time at once, and so does `… van now` or `… van 14:30`. A number with no colon
+  stays part of the place (`Gate 1430`). Only moves are typed this way.
+- **Questions:** `WHERE BAT-12`, `AT van`.
+
+A hub with no internet keeps working and tries Telegram again every 30 seconds. Telegram keeps
+unfetched messages for 24 hours; after that, recover them from a chat export with `fl import`.
+
 ### Takeover: the hub laptop dies
 
 1. Stop the old hub if it's still running (only one hub may poll the bot).
 2. On another laptop: clone the ledger repo (from its remote, or a USB `git bundle`).
-3. Copy the bot token file (see "Secrets"), and the hub's certificate authority
-   (`~/.local/share/field-ledger/hub-ca/`) if phones should keep working without being set up
-   again.
+3. Copy the bot token file (see "Secrets"), and bring the hub's certificate authority so
+   phones keep working without being set up again. On the old laptop, ahead of time:
+   `field-ledger hub-ca export /media/usb/casio-ca.p12` (it asks for a passphrase; the file
+   holds the CA's key, so it is refused inside a Git repo). On this one:
+   `field-ledger hub-ca import /media/usb/casio-ca.p12`. A laptop that already has a different
+   CA keeps it unless you add `--replace`; phones set up for the replaced one then scan the
+   QR code again. Every hub laptop of a team can share one CA this way.
 4. Run `field-ledger serve`. Phones send their queued moves; the bot hands over anything it held.
 
 Telegram keeps relayed moves for 24 hours. After that, recover them from a chat export with
@@ -386,8 +469,9 @@ Telegram keeps relayed moves for 24 hours. After that, recover them from a chat 
 
 ### No laptop on site
 
-Phones must already have the board installed. Moves go through the bot; if a move has no time,
-the bot asks for one. A rough time beats none, and it's marked `prompted`.
+Phones must already have the board installed. Moves go through the bot (see "The relay"); if a
+typed move has no time, the bot asks for one. A rough time beats none, and it's marked `prompted`
+(`now` isn't: it's exact).
 
 ### v0 today
 
@@ -440,6 +524,7 @@ field-ledger show feat/secure-cdr --repo /path/to/repo   # no fetch
 #   at drone-3, deployed as 4b7e0d1
 #   moved on since deploy: deployed as 4b7e0d1, head is now 9c1d4ae
 #   security label: HIGH
+#   config: 854e00f83420 (deploy/site-b.yaml@9c1d4ae…)
 ```
 
 When the branch has moved on since its deploy, `show` says so. It only warns: nothing is
@@ -455,6 +540,29 @@ is not the same as `NA` (checked, not applicable). **v0**:
 field-ledger label feat/secure-cdr HIGH opens the CDR port to the site LAN
 # SEC feat/secure-cdr · drone-3 · was LOW → HIGH
 ```
+
+Each build also carries its **config**, as a SHA-256 that the ledger computes itself. You
+point it at the files, never at a hash: no command, import line or hub request takes one, so
+nobody can record a hash for a config that isn't there. A file is either on this laptop, or
+`path@commit` in the code repo (`--repo`, a local clone's folder), which the record names by
+its full commit id. A branch name reads where `deploy` does, `origin/<branch>` first, so a
+local branch you haven't pulled can't record an older config than the one deployed.
+One file's hash is its plain SHA-256, the same as `sha256sum` prints; several (a chart and
+its values) hash together, and only their bytes count, not their order or names. Image
+digests aren't taken yet: they can't be recomputed offline. **v0**:
+
+```bash
+field-ledger cfg feat/secure-cdr deploy/site-b.yaml@HEAD --repo /path/to/repo --reason "port 8443"
+# CFG feat/secure-cdr · drone-3 · was 1a2b3c4d → 854e00f8
+field-ledger cfg feat/secure-cdr --check ./from-drone-3.yaml   # the audit's half
+# ✓ feat/secure-cdr's config matches the record (854e00f8).
+```
+
+Each new config is a CFG event: the log of what changed after deploying to the location.
+Recording the hash it already has adds nothing. `--check` takes a copy of what's deployed
+(pulled off the device); if it differs, that's written as a CFG flagged `mismatch`, the log
+follows what was found, and the audit's mismatches count it. `undo` takes a CFG back. The
+board shows the first 8 characters of the hash on a build's card; it can't record one.
 
 ### Sample: one build, end to end (v0)
 
@@ -563,7 +671,8 @@ This tool's repo is **public**. Ledger data never goes in it.
 ### Secrets
 
 Bot tokens and forge tokens live in a local, gitignored file or an environment variable.
-Never commit them. Copying the token file is part of takeover.
+Never commit them. The bot's token: `FL_TELEGRAM_TOKEN`, or `~/.config/field-ledger/telegram-token`
+(outside both repos). Copying the token file is part of takeover.
 
 ---
 
@@ -574,13 +683,13 @@ Never commit them. Copying the token file is part of takeover.
 | `id_digits` | `2` | Minimum width of the ID number |
 | `undo_minutes` | `10` | How long the one-tap Undo is offered |
 | `conflict_window` | `5 min` device / `60 min` prompted or import | How close two moves must be to get a ⚠ |
-| `nudge_after` | `1` working day | When an unresolved ⚠ nudges the field-ops owner |
+| `nudge_after` | `1` day | When an unresolved ⚠ nudges the field-ops owner. Every day counts: no guessing at workdays or public holidays |
 | `ledger_dir` | `./ledger` | Where the ledger's own repo lives |
 | `build_home` | `hq` | Where a build is before its first deploy. **v0**: `fl set build_home <location>`; stored in the ledger repo's `settings.json`, so every device shares it |
 
 **v0**: only `build_home` can be changed (`fl set`). `ledger_dir` comes from `--ledger-dir` or
 `FL_LEDGER_DIR`. `undo_minutes` and `conflict_window` are in force at their defaults but fixed.
-`id_digits` and `nudge_after` are **planned**.
+`nudge_after` is in force at 1 day but fixed. `id_digits` is **planned**.
 
 ---
 
@@ -600,6 +709,7 @@ Never commit them. Copying the token file is part of takeover.
 | `ledger/cli.py` | `fl` command; opening a ledger, shared with code mode | no |
 | `cli.py` | `field-ledger` command: board, `show`, `deploy`, `label`, `undo`, `serve` | no |
 | `hub.py` | The hub: `/state.json`, the web front end, the board's writes (`/api/*`), http and HTTPS on one port | no |
+| `relay.py` | The Telegram relay: polls the bot, logs phones' waiting writes and typed moves through the hub, answers WHERE / AT | no |
 | `tls.py` | The hub's certificate authority and certificate (runs `openssl`) | no |
 | `qr.py` | QR codes for "Add a phone" | yes |
 | `web/` | The board: `tokens.css`, `components/*.js`, `icons.js`, `fonts/`, `board.js`, `api.js`, `sw.js` (offline), `setup.html`/`setup.js` (adding a phone). No build step | (front end) |

@@ -65,12 +65,15 @@ class Event:
     device: str
     seq: int                  # per-device counter: ordering survives clock drift on one device
     actor: str
-    kind: str                 # ADD | MOVE | VOID | RENAME | SEC | RESOLVE
+    kind: str                 # ADD | MOVE | AUD | VOID | RENAME | SEC | STATE | CFG | OWNER | RESOLVE
     item: str = ""
-    src: str = ""             # MOVE: stated origin. RENAME: old name.
-    dst: str = ""             # MOVE/ADD: location. RENAME: new name. SEC: the label.
+    src: str = ""             # MOVE, AUD: where the log had it. RENAME: old name. CFG: the files.
+                              # OWNER: the owner before.
+    dst: str = ""             # MOVE/ADD: location. AUD: where it was found. RENAME: new name. SEC: the label. STATE: the state.
+                              # CFG: the config's SHA-256, always computed by the tool.
+                              # OWNER: the new owner.
     ref: str = ""             # VOID: target event id
-    note: str = ""            # VOID, SEC: reason. ADD: group name.
+    note: str = ""            # VOID, SEC, STATE, CFG: reason. ADD: group name.
     sha: str = ""             # MOVE of a build node: its head commit when it was deployed
     batch: str = ""           # shared by the events one command wrote; undo takes them back together
     time_source: str = ""     # '' = device clock; 'import' (or 'prompted'): approximate, wider ⚠ window

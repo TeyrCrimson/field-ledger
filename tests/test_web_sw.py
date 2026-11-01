@@ -15,16 +15,20 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="needs node
 HARNESS = """
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-const answers = process.argv[1] === "answers";
+const mode = process.argv[1];                 // hangs | answers | same (what was saved)
+const answers = mode !== "hangs";
+const posted = [];
 const alive = setInterval(() => {}, 1_000);   // node doesn't wait for AbortSignal.timeout alone
 const saved = new Map([["https://hub/board.js", "saved board"], ["https://hub/state.json", "saved kit"]]);
 const on = {};
 const cache = { put: async (req, res) => saved.set(req.url, await res.text()), addAll: async () => {} };
 vm.runInNewContext(readFileSync("sw.js", "utf8"), {
-  self: { addEventListener: (type, fn) => (on[type] = fn) },
+  self: { addEventListener: (type, fn) => (on[type] = fn),
+          clients: { matchAll: async () => [{ postMessage: (m) => posted.push(m) }] } },
   caches: { open: async () => cache,
             match: async (req) => saved.has(req.url) ? new Response(saved.get(req.url)) : undefined },
-  fetch: (req, { signal } = {}) => answers ? Promise.resolve(new Response("live " + req.url.slice(12)))
+  fetch: (req, { signal } = {}) => answers ? Promise.resolve(new Response(
+      mode === "same" ? saved.get(req.url) : "live " + req.url.slice(12)))
     : new Promise((_, reject) => signal?.addEventListener("abort", () => reject(signal.reason))),
   Response, Headers, URL, AbortSignal,
 });
@@ -42,7 +46,7 @@ async function open(path) {
 }
 const board = await open("board.js");
 const kit = await open("state.json");
-console.log(JSON.stringify({ board, kit, next: saved.get("https://hub/board.js") }));
+console.log(JSON.stringify({ board, kit, next: saved.get("https://hub/board.js"), posted }));
 clearInterval(alive);
 """
 
@@ -65,3 +69,10 @@ def test_a_hub_that_answers_wins_for_the_kit_and_refreshes_the_files_for_next_ti
     assert seen["kit"]["text"] == "live state.json" and not seen["kit"]["flagged"]
     assert seen["board"]["text"] == "saved board"      # opened at once from the saved copy
     assert seen["next"] == "live board.js"             # and the next open has the hub's
+
+
+def test_a_changed_board_file_tells_the_page_once_per_file_and_the_kit_never_does():
+    """The kit changes on every refresh; only a board file means a newer board."""
+    assert run("answers")["posted"] == ["updated"]     # board.js changed; state.json did too
+    assert run("same")["posted"] == []
+    assert run("hangs")["posted"] == []

@@ -1,6 +1,7 @@
 """F4.5 the Telegram relay: phones that can't reach the hub send their waiting writes through
 the team's bot, and the hub fetches them over outbound HTTPS. A typed move gets asked for a
-time (marked `prompted`); WHERE and AT are answered. Only linked people get anything back.
+time (a clock time is marked `prompted`; `now` is exact); WHERE and AT are answered. Only
+linked people get anything back.
 Tested against a fake Telegram server: no token, no network.
 """
 
@@ -15,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from field_ledger import hub, relay
-from field_ledger.ledger import store
+from field_ledger.ledger import service, store
 from field_ledger.ledger.cli import main as fl
 from field_ledger.ledger.state import fold, location_of
 from field_ledger.ledger.store import read_events
@@ -130,11 +131,29 @@ def test_a_typed_move_is_asked_for_a_time_and_marked_prompted(the_hub):
     pending = {}
     assert relay.handle(the_hub, message("MOVE BAT-02 > site-b"), pending) == relay.ASK_TIME
     assert not any(e.item == "BAT-02" and e.kind == "MOVE" for e in events(the_hub))
-    reply = relay.handle(the_hub, message("now", message_id=2), pending)
+    local = datetime(2026, 10, 17, 2, 50, tzinfo=timezone.utc).astimezone()   # 10 min before sending
+    reply = relay.handle(the_hub, message(f"{local:%H:%M}", message_id=2), pending)
     assert reply == "✓ BAT-02 · Battery · was in truck → site-b" and pending == {}
     e = next(e for e in events(the_hub) if e.item == "BAT-02" and e.kind == "MOVE")
     assert (e.actor, e.device, e.time_source) == ("Yoeng", f"telegram-{YOENG}", "prompted")
-    assert e.ts == datetime(2026, 10, 17, 3, 0, tzinfo=timezone.utc)
+    assert e.ts == datetime(2026, 10, 17, 2, 50, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("first, second", [("MOVE BAT-02 > site-b", "now"),
+                                           ("MOVE BAT-02 > site-b now", None),
+                                           ("MOVE BAT-02 > site-b @now", None)])
+def test_now_is_exact_so_two_of_your_own_moves_are_put_in_order(the_hub, first, second):
+    """`now` is when the message was sent, not a guess (Teyr, 2026-11-01): it isn't marked
+    prompted, so your next typed move of the same item isn't a ⚠ with it."""
+    pending = {}
+    relay.handle(the_hub, message(first), pending)
+    if second:
+        relay.handle(the_hub, message(second, message_id=2), pending)
+    later = datetime(2026, 10, 17, 3, 10, tzinfo=timezone.utc)
+    relay.handle(the_hub, message("MOVE BAT-02 > van now", message_id=3, sent=later), pending)
+    state = fold(events(the_hub))
+    assert [e.time_source for e in state.events if e.item == "BAT-02" and e.kind == "MOVE"] == ["", ""]
+    assert location_of(state, "BAT-02") == "van" and service.open_conflicts(state) == {}
 
 
 def test_a_time_after_the_move_logs_it_at_once(the_hub):

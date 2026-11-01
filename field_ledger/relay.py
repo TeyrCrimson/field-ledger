@@ -9,8 +9,9 @@ else, so a stranger who finds it learns nothing.
 - **A phone's waiting writes**, one `#fl {...}` line each, made by the board when the hub is
   away. Each is the same JSON the phone would POST, with its own id, time and seq, so it goes
   through `hub.write` exactly like a resend: logged once, held on Needs a look if refused.
-- **A typed move** (`MOVE BAT-12 > van`). It has no time, so the bot asks for one; the answer
-  is marked `prompted` (approximate, so it gets the wider ⚠ window). `@14:30` at the end gives
+- **A typed move** (`MOVE BAT-12 > van`). It has no time, so the bot asks for one; a clock
+  time is marked `prompted` (approximate, so it gets the wider ⚠ window). `now` is the moment
+  the message was sent, as exact as a phone's stamp, so it isn't (Teyr, 2026-11-01). `@14:30` at the end gives
   the time at once; so does a bare `now` or `14:30` (with its `:`), which would otherwise end up
   in the place's name. Its event id comes from the chat and message, so a refetch adds nothing.
 - **A question**: `WHERE BAT-12`, `AT van`. Read only.
@@ -145,11 +146,12 @@ def relay_writes(the_hub, name: str, writes: list[tuple[str, dict]]) -> str:
     return "\n".join(lines)
 
 
-def typed_move(the_hub, name: str, chat: int, message: dict, cmd: Move, when: datetime) -> str:
+def typed_move(the_hub, name: str, chat: int, message: dict, cmd: Move, when: datetime,
+               exact: bool) -> str:
     body = {"id": str(uuid.uuid5(TYPED_IDS, f"{chat}:{message['message_id']}")),
             "item": cmd.item, "to": cmd.dst, "actor": name, "device": f"telegram-{message['from']['id']}",
             "occurred_at": when.isoformat(), "queued": True}
-    answer = hub_module.write(the_hub, "move", body, time_source="prompted")
+    answer = hub_module.write(the_hub, "move", body, time_source="" if exact else "prompted")
     if answer.get("held"):
         return f"Needs a look on the board: {' '.join(answer['messages'])}"
     return answer.get("readback") or " ".join(answer["messages"])
@@ -175,7 +177,7 @@ def handle(the_hub, message: dict, pending: dict) -> str | None:
         when = asked_time(text, pending[chat][1])
         if when is not None:
             original, _, cmd = pending.pop(chat)
-            return typed_move(the_hub, name, chat, original, cmd, when)
+            return typed_move(the_hub, name, chat, original, cmd, when, text.lower() == "now")
     timed = AT_TIME.search(text) or (text[:4].upper() == "MOVE" and BARE_TIME.search(text))
     try:
         cmd = parse(text[:timed.start()] if timed else text)
@@ -189,7 +191,7 @@ def handle(the_hub, message: dict, pending: dict) -> str | None:
     if when is None:
         pending[chat] = (message, sent, cmd)
         return ASK_TIME
-    return typed_move(the_hub, name, chat, message, cmd, when)
+    return typed_move(the_hub, name, chat, message, cmd, when, timed[1].lower() == "now")
 
 
 # --- polling -----------------------------------------------------------------------------

@@ -441,8 +441,9 @@ has internet. The bot carries writes; it is never the record.
   Needs a look. It's logged as the person whose Telegram sent it. The writes stay on the phone
   too, and the hub answers "already logged" when it's back. Undo, owner and settling need the
   hub itself.
-- **Typed:** `MOVE BAT-12 > van` to the bot. It asks when ("14:30" or "now"); the answer is
-  marked `prompted` (approximate, so it gets the 60-minute ⚠ window). `MOVE BAT-12 > van @14:30`
+- **Typed:** `MOVE BAT-12 > van` to the bot. It asks when ("14:30" or "now"). A clock time is
+  marked `prompted` (approximate, so it gets the 60-minute ⚠ window); `now` is when you sent
+  it, as exact as a phone's own time, so it isn't. `MOVE BAT-12 > van @14:30`
   gives the time at once, and so does `… van now` or `… van 14:30`. A number with no colon
   stays part of the place (`Gate 1430`). Only moves are typed this way.
 - **Questions:** `WHERE BAT-12`, `AT van`.
@@ -469,7 +470,8 @@ Telegram keeps relayed moves for 24 hours. After that, recover them from a chat 
 ### No laptop on site
 
 Phones must already have the board installed. Moves go through the bot (see "The relay"); if a
-typed move has no time, the bot asks for one. A rough time beats none, and it's marked `prompted`.
+typed move has no time, the bot asks for one. A rough time beats none, and it's marked `prompted`
+(`now` isn't: it's exact).
 
 ### v0 today
 

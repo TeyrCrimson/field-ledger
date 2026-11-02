@@ -126,10 +126,11 @@ Status: **v0** pads to 2 digits (fixed). `id_digits` is **planned**.
 **On a phone (planned):** tap an item, drag it to where it went. Under 2 seconds.
 **From the CLI or chat (v0):** the text grammar below.
 
-Every move prints a **readback** with the item's previous location:
+Every move prints a **readback** with where the item was, innermost first: the case you'd
+open, then where that case is.
 
 ```
-✓ BAT-12 · Blue 6S · was in Case A → van        [Undo]
+✓ BAT-12 · Blue 6S · was in CAS-01 in VAN-01 at hq → site-b        [Undo]
 ```
 
 If the "was in" doesn't match what's in your hand, you have the wrong ID: tap Undo.
@@ -446,7 +447,13 @@ has internet. The bot carries writes; it is never the record.
   it, as exact as a phone's own time, so it isn't. `MOVE BAT-12 > van @14:30`
   gives the time at once, and so does `… van now` or `… van 14:30`. A number with no colon
   stays part of the place (`Gate 1430`). Only moves are typed this way.
-- **Questions:** `WHERE BAT-12`, `AT van`.
+- **Questions:** `WHERE BAT-12`, `AT van`. `WHERE` names the chain and who put each link there:
+  `BAT-12: CAS-01 in VAN-01 at hq` / `Put there: BAT-12 by Teyr, 14:02 · CAS-01 by Yoeng, 13:40 · VAN-01 by Ivan, 31 Oct 09:15`.
+- **Help while typing:** type `/` in the chat for the bot's menu (`/move`, `/where`, `/at`, each
+  with an example); `/move BAT-12 > van now` works as well as `MOVE …`. A near-miss command,
+  item or place gets `Did you mean: MOVE BAT-12 > van now`: reply `yes` to send that, or send
+  yours again to keep it as typed (a place that's really new). A bot sees nothing until a
+  message is sent, so the menu is the only help it can give while you type.
 
 A hub with no internet keeps working and tries Telegram again every 30 seconds. Telegram keeps
 unfetched messages for 24 hours; after that, recover them from a chat export with `fl import`.

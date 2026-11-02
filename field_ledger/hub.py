@@ -43,7 +43,7 @@ from .ledger import service, store
 from .ledger.ids import canonical_location, is_prefix
 from .ledger.kit import Group, plan_more
 from .ledger.model import Kind, Move, Verdict
-from .ledger.state import State, ancestors, deployed_sha, fold, location_of
+from .ledger.state import State, ancestors, deployed_sha, fold, location_of, where_text
 from .ledger.validate import holds_things
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -186,7 +186,7 @@ def api_move(ctx: service.Context, body: dict) -> dict:
                                   confirmed=body.get("confirmed") is True, event_id=body.get("id"))
     e = outcome.event
     return reply(outcome, e and (f"✓ {e.item} · {before.items.get(e.item, '')} · "
-                                 f"was in {location_of(before, e.item) or '—'} → {e.dst}"))
+                                 f"was in {where_text(before, e.item) or '—'} → {e.dst}"))
 
 
 def api_undo(ctx: service.Context, body: dict) -> dict:
@@ -320,7 +320,9 @@ def write(hub: Hub, command: str, body: dict, time_source: str = "") -> dict:
         if not queued:
             raise
         answer = {"verdict": "REJECT", "messages": [str(error)], "event": None, "readback": ""}
-    if queued and answer["verdict"] in ("REJECT", "CONFIRM"):
+    # A confirmed write is logged and still answers CONFIRM (it was asked, and said yes):
+    # only a write that logged nothing waits on Needs a look.
+    if queued and answer["verdict"] in ("REJECT", "CONFIRM") and not answer["event"]:
         return hold(hub, command, body, answer, time_source)
     return answer
 

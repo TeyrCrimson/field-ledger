@@ -74,8 +74,8 @@ security labels from a scanner (set by hand for now).
   comes from nowhere.
 - **ID-shaped destination** (`DRN-03`) that names no item: refused as a typo when that kit
   exists, asked once (CONFIRM) when it doesn't, then a known place. CLI and phone alike.
-- **Readback:** every move echoes ID, name, previous location and new location
-  (`✓ BAT-12 · Blue 6S · was in Case A → van`).
+- **Readback:** every move echoes ID, name, where it was (the whole chain, innermost first) and
+  the new location (`✓ BAT-12 · Blue 6S · was in CAS-01 in VAN-01 at hq → site-b`).
 - **Undo:** VOIDs every event of your own last command (they share a `batch`: a deploy, a kit,
   a whole import), inside `undo_minutes` (default 10); refused after. A node the command
   created that someone has used since is left alone.
@@ -91,6 +91,8 @@ security labels from a scanner (set by hand for now).
 - **Relay** (`relay.py`): carries the board's own queued writes (`#fl` + JSON) through
   `hub.write` like a resend, as the linked Telegram user; typed MOVEs are asked for a time
   (a clock time is `prompted`; `now` is exact, Teyr 2026-11-01); only `/start <code>`-linked users get replies. Token outside both repos.
+  Typing `/` shows its command menu; a near-miss command, item or place gets "Did you mean"
+  (yes sends it; resending yours keeps it, and answers the hub's own question too).
 - **Derived state** (code mode): branch age and last commit from local Git, always, offline.
 
 ## Settings (defaults)

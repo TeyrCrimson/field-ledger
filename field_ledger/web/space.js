@@ -211,6 +211,7 @@ function renderBox(nodes, pending) {
     onFlip: flip,
     onTitle: () => targetMenu(open),
     onBack: target && !target.vehicle && !isPlace(open) ? () => openBox(target.parent) : null,
+    up: target && !target.vehicle && !isPlace(open) ? target.parent : null,
     onClose: () => openBox(null),
   });
   frame.id = "box";

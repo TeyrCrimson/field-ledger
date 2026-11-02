@@ -449,6 +449,11 @@ has internet. The bot carries writes; it is never the record.
   stays part of the place (`Gate 1430`). Only moves are typed this way.
 - **Questions:** `WHERE BAT-12`, `AT van`. `WHERE` names the chain and who put each link there:
   `BAT-12: CAS-01 in VAN-01 at hq` / `Put there: BAT-12 by Teyr, 14:02 · CAS-01 by Yoeng, 13:40 · VAN-01 by Ivan, 31 Oct 09:15`.
+- **Help while typing:** type `/` in the chat for the bot's menu (`/move`, `/where`, `/at`, each
+  with an example); `/move BAT-12 > van now` works as well as `MOVE …`. A near-miss command,
+  item or place gets `Did you mean: MOVE BAT-12 > van now`: reply `yes` to send that, or send
+  yours again to keep it as typed (a place that's really new). A bot sees nothing until a
+  message is sent, so the menu is the only help it can give while you type.
 
 A hub with no internet keeps working and tries Telegram again every 30 seconds. Telegram keeps
 unfetched messages for 24 hours; after that, recover them from a chat export with `fl import`.

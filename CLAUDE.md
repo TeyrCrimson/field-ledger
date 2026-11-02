@@ -91,6 +91,8 @@ security labels from a scanner (set by hand for now).
 - **Relay** (`relay.py`): carries the board's own queued writes (`#fl` + JSON) through
   `hub.write` like a resend, as the linked Telegram user; typed MOVEs are asked for a time
   (a clock time is `prompted`; `now` is exact, Teyr 2026-11-01); only `/start <code>`-linked users get replies. Token outside both repos.
+  Typing `/` shows its command menu; a near-miss command, item or place gets "Did you mean"
+  (yes sends it; resending yours keeps it, and answers the hub's own question too).
 - **Derived state** (code mode): branch age and last commit from local Git, always, offline.
 
 ## Settings (defaults)

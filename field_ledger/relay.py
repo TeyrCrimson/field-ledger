@@ -34,7 +34,7 @@ from . import hub as hub_module
 from .ledger import store
 from .ledger.model import At, Move, Where
 from .ledger.parse import ParseError, parse
-from .ledger.state import ancestors, fold, items_at, resolve
+from .ledger.state import ancestors, fold, items_at, resolve, where_text
 from .ledger.validate import canonical_destination, node_id, not_found
 
 API = "https://api.telegram.org"
@@ -111,7 +111,15 @@ def asked_time(text: str, sent: datetime) -> datetime | None:
 
 # --- handling one message ----------------------------------------------------------------
 
-def answer_question(ledger_dir: Path, cmd) -> str:
+def short_time(when: datetime, now: datetime) -> str:
+    """14:02 today, else 31 Oct 14:02: a reply is read on the day, so the date is noise."""
+    local = when.astimezone()
+    return f"{local:%H:%M}" if local.date() == now.astimezone().date() else f"{local:%d %b %H:%M}"
+
+
+def answer_question(ledger_dir: Path, cmd, now: datetime) -> str:
+    """WHERE names the chain, innermost first, and who put each link there: "I know it's in
+    Case A, but who shifted Case A?" (Teyr, 2026-11-02)."""
     state = fold(store.read_events(ledger_dir))
     if isinstance(cmd, Where):
         item = node_id(cmd.item, state)
@@ -119,8 +127,10 @@ def answer_question(ledger_dir: Path, cmd) -> str:
             return not_found(cmd.item, state)
         if item not in state.where:
             return f"{item}: nowhere yet"
-        *inside, place = ancestors(state, item)
-        return f"{item}: {place}" + (f" (in {' in '.join(inside)})" if inside else "")
+        links = [item, *ancestors(state, item)[:-1]]
+        put = " · ".join(f"{n} by {state.placed[n].actor}, {short_time(state.placed[n].ts, now)}"
+                         for n in links if n in state.placed)
+        return f"{item}: {where_text(state, item)}" + (f"\nPut there: {put}" if put else "")
     target = resolve(canonical_destination(cmd.location, state), state.aliases)
     items = items_at(state, target)
     return f"At {target}: {', '.join(items)}" if items else f"Nothing logged at '{target}'."
@@ -184,7 +194,7 @@ def handle(the_hub, message: dict, pending: dict) -> str | None:
     except ParseError as error:
         return f"{error}\nI read MOVE <ITEM> > <PLACE>, WHERE <ITEM> and AT <PLACE>."
     if isinstance(cmd, (Where, At)):
-        return answer_question(the_hub.ledger_dir, cmd)
+        return answer_question(the_hub.ledger_dir, cmd, sent)
     if not isinstance(cmd, Move):
         return "Only moves come through here; use the board or `fl` for the rest."
     when = asked_time(timed[1], sent) if timed else None

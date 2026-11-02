@@ -29,6 +29,7 @@ class State:
     items: dict[str, str] = field(default_factory=dict)        # item -> group name
     where: dict[str, str] = field(default_factory=dict)        # item -> parent: location or item
     last_event: dict[str, Event] = field(default_factory=dict) # item -> latest ADD/MOVE
+    placed: dict[str, Event] = field(default_factory=dict)     # item -> the event that put it where it is
     locations: set[str] = field(default_factory=set)           # every resolved location seen
     fixed: set[str] = field(default_factory=set)               # location nodes: hold nodes, rarely move
     aliases: dict[str, str] = field(default_factory=dict)      # old location -> new
@@ -89,6 +90,14 @@ def makes_cycle(state: State, item: str, dst: str) -> bool:
     return dst == item or item in ancestors(state, dst)
 
 
+def where_text(state: State, item: str) -> str:
+    """Where `item` is, innermost first: 'CAS-01 in VAN-01 at hq', or just 'truck'. The case
+    you'd open, then where that case is: the top place alone leaves you hunting for it
+    (Teyr, 2026-11-02). '' for a node not placed yet."""
+    *inside, place = ancestors(state, item) or [""]
+    return " in ".join(inside) + (" at " if inside else "") + place
+
+
 def location_of(state: State, item: str) -> str:
     """Top of the chain. '' for a node that has not been placed anywhere yet."""
     chain = ancestors(state, item)
@@ -113,6 +122,8 @@ def apply(state: State, event: Event) -> None:
     # An ADD with no destination is a node with nothing above it yet: a location, or a
     # branch waiting for its first deploy. It stays out of `where` so it has no parent.
     if (event.kind == "ADD" and event.dst) or moves:
+        if state.where.get(event.item) != event.dst:   # a check or settle where it was isn't a move
+            state.placed[event.item] = event
         state.where[event.item] = event.dst
         state.last_event[event.item] = event
         if event.dst not in state.items:

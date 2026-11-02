@@ -89,7 +89,7 @@ def test_strangers_get_nothing_and_a_code_links_once(the_hub, tmp_path):
     assert relay.handle(the_hub, message(f"/start {code}", user=99), {}) == \
         "Hello, teyr. Moves you send here go into the ledger."
     assert relay.handle(the_hub, message(f"/start {code}", user=100), {}).startswith("I don't know you")
-    assert relay.handle(the_hub, stranger, {}) == "BAT-01: truck"
+    assert relay.handle(the_hub, stranger, {}).startswith("BAT-01: truck\n")
 
 
 def test_fl_people_link(tmp_path, capsys):
@@ -180,8 +180,20 @@ def test_a_number_at_the_end_with_no_colon_stays_in_the_place(the_hub):
     assert location_of(fold(events(the_hub)), "BAT-03") == "gate 1430"          # places are kept in lower case
 
 
+def test_where_names_the_chain_and_who_put_each_link_there(the_hub):
+    """"I know it's in Case A, but who shifted Case A?" (Teyr, 2026-11-02)."""
+    sent = datetime(2026, 10, 17, 3, 0, tzinfo=timezone.utc)
+    add = lambda *argv: fl(["--ledger-dir", str(the_hub.ledger_dir), "--db", str(the_hub.db),
+                            "--actor", "teyr", *argv], now=lambda: sent)
+    assert add("add", "CAS", "1", "--at", "truck", "--container") == 0
+    relay.handle(the_hub, message("MOVE BAT-01 > CAS-01 now", sent=sent), {})
+    reply = relay.handle(the_hub, message("WHERE BAT-01", message_id=2, sent=sent), {})
+    at = f"{sent.astimezone():%H:%M}"                                          # today: no date
+    assert reply == f"BAT-01: CAS-01 at truck\nPut there: BAT-01 by Yoeng, {at} · CAS-01 by teyr, {at}"
+
+
 def test_questions_and_everything_else(the_hub):
-    assert relay.handle(the_hub, message("where bat-1"), {}) == "BAT-01: truck"
+    assert relay.handle(the_hub, message("where bat-1"), {}).startswith("BAT-01: truck\n")
     assert relay.handle(the_hub, message("AT site-b"), {}) == "At site-b: CAM-01"
     assert relay.handle(the_hub, message("RENAME truck > lorry"), {}).startswith("Only moves come through")
     assert relay.handle(the_hub, message("hello"), {}).startswith("unknown command 'HELLO'")
@@ -228,8 +240,8 @@ def test_polling_answers_and_never_handles_an_update_twice(the_hub):
     finally:
         server.shutdown()
     assert FakeTelegram.offsets == [0, 12]
-    assert [s["text"] for s in FakeTelegram.sent] == ["BAT-01: truck",
-                                                      "✓ BAT-01 · Battery · was in truck → van"]
+    assert [s["text"].split("\n")[0] for s in FakeTelegram.sent] == [
+        "BAT-01: truck", "✓ BAT-01 · Battery · was in truck → van"]
     assert FakeTelegram.sent[1]["reply_to_message_id"] == 2
 
 

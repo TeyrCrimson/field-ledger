@@ -288,6 +288,8 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
   people's changes until you drop or cancel, and the status line says so.
 - **Readback:** every write shows `✓ BAT-03 · Blue 6S · was in truck → van` with **Undo**.
   "Undo my last" in the header works for 10 minutes.
+- **Dark mode / Light mode** in the header switches the board, and the phone remembers it.
+  Until it's tapped, the board follows the phone's own setting.
 - **Asked first:** the same rules as `fl`. A new ID-shaped place or a fixed location asks
   before it logs; a refusal says why.
 - **⚠:** a card two devices disagree on shows both places; pick it and tap where it really is.

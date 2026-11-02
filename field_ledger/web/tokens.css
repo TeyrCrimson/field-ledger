@@ -52,29 +52,29 @@
 
 }
 
-/* Night: the same palette, darker. Outlines stay darker than what they frame. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #eef0e6;
-    --text-shadow: #10131d;
-    --muted: #a9adc2;
-    --outline: #0b0e18;
-    --ground: #18202e;
-    --ground-2: #1c2536;
-    --surface: #2a3045;
-    --surface-2: #22283a;
-    --trim: #4f7fc8;
-    --select: #4f4720;
-    --ok: #8fd19e;
-    --error: #ff8a80;
-    --warn: #ffd27a;
-    --warn-bg: #3a2e12;
-    --sec-crit: #ff8a80;
-    --sec-high: #ffab70;
-    --sec-med: #f2c55c;
-    --sec-low: #8fd19e;
-    --sec-na: #a3a9b1;
-  }
+/* Night: the same palette, darker. Outlines stay darker than what they frame. theme.js sets
+   data-theme: the board's toggle, else the phone's own setting. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --text: #eef0e6;
+  --text-shadow: #10131d;
+  --muted: #a9adc2;
+  --outline: #0b0e18;
+  --ground: #18202e;
+  --ground-2: #1c2536;
+  --surface: #2a3045;
+  --surface-2: #22283a;
+  --trim: #4f7fc8;
+  --select: #4f4720;
+  --ok: #8fd19e;
+  --error: #ff8a80;
+  --warn: #ffd27a;
+  --warn-bg: #3a2e12;
+  --sec-crit: #ff8a80;
+  --sec-high: #ffab70;
+  --sec-med: #f2c55c;
+  --sec-low: #8fd19e;
+  --sec-na: #a3a9b1;
 }
 
 * {

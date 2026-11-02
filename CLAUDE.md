@@ -74,8 +74,8 @@ security labels from a scanner (set by hand for now).
   comes from nowhere.
 - **ID-shaped destination** (`DRN-03`) that names no item: refused as a typo when that kit
   exists, asked once (CONFIRM) when it doesn't, then a known place. CLI and phone alike.
-- **Readback:** every move echoes ID, name, previous location and new location
-  (`✓ BAT-12 · Blue 6S · was in Case A → van`).
+- **Readback:** every move echoes ID, name, where it was (the whole chain, innermost first) and
+  the new location (`✓ BAT-12 · Blue 6S · was in CAS-01 in VAN-01 at hq → site-b`).
 - **Undo:** VOIDs every event of your own last command (they share a `batch`: a deploy, a kit,
   a whole import), inside `undo_minutes` (default 10); refused after. A node the command
   created that someone has used since is left alone.

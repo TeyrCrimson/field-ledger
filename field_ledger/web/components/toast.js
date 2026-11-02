@@ -1,5 +1,6 @@
-// The readback after a write ("✓ BAT-12 · Blue 6S · was in Case A → van") with its Undo,
-// or why nothing was logged. The readback is how a wrong ID gets caught, so it stays a while.
+// The readback after a write ("✓ BAT-12 · Blue 6S · was in CAS-01 in VAN-01 at hq → site-b")
+// with its Undo, or why nothing was logged. The readback is how a wrong ID gets caught, so it
+// stays a while.
 //
 // A text box at the bottom, as in a handheld RPG: the text types out (very fast), then a ▼
 // says it's all there. Tap it while it types to show the rest at once; tap again to put it

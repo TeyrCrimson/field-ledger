@@ -61,6 +61,16 @@ def test_a_move_is_written_as_the_requests_person_and_device(board):
     assert location_of(state(ledger), "BAT-01") == "van"
 
 
+def test_the_readback_names_the_whole_chain_innermost_first(board):
+    """The case you'd open, then where that case is: "was in truck" alone left you hunting
+    for which case (Teyr, 2026-11-02)."""
+    base, _, _ = board
+    post(base, "add", prefix="CAS", count=1, at="truck", name="Case", container=True, **PHONE)
+    post(base, "move", item="BAT-01", to="CAS-01", **PHONE)
+    status, answer = post(base, "move", item="BAT-01", to="van", **PHONE)
+    assert answer["readback"] == "✓ BAT-01 · Battery · was in CAS-01 at truck → van"
+
+
 def test_a_refused_move_writes_nothing(board):
     base, ledger, _ = board
     before = len(read_events(ledger))

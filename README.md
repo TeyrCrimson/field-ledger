@@ -287,9 +287,13 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
   where it went in the bar at the bottom. While a card is picked, the board holds other
   people's changes until you drop or cancel, and the status line says so.
 - **Readback:** every write shows `✓ BAT-03 · Blue 6S · was in truck → van` with **Undo**.
-  "Undo my last" in the header works for 10 minutes.
-- **Dark mode / Light mode** in the header switches the board, and the phone remembers it.
-  Until it's tapped, the board follows the phone's own setting.
+  "Undo my last" in the Menu works for 10 minutes.
+- **The header** is the same on the board and the space: **Menu**, a panel from the left (the
+  side its button is on), most-used first and the same on both: Audit, Undo my last,
+  + Add items, Owner, You, Add a phone, Dark mode / Light mode. Then **Board | Space** (the
+  page you're on lit; tap to go to the other), and on the space **Zoom 2×** (each tap a size
+  up, 1× → 2× → 3×, then back to 1×). **Dark mode / Light mode** switches every page, and the
+  phone remembers it; until it's tapped, every page follows the phone's own setting.
 - **Asked first:** the same rules as `fl`. A new ID-shaped place or a fixed location asks
   before it logs; a refusal says why.
 - **⚠:** a card two devices disagree on shows both places; pick it and tap where it really is.
@@ -338,7 +342,7 @@ phone must use it over HTTPS: browsers only keep a page working offline on a sec
 hub has its own certificate authority for that, and joining works like linking WhatsApp to a
 computer:
 
-1. On the laptop, tap **Add a phone** (or use the QR code `serve --lan` prints).
+1. On the laptop, open **Menu** and tap **Add a phone** (or use the QR code `serve --lan` prints).
 2. Point the phone's camera at the code and open the link.
 3. The phone shows three steps for its own kind (Android or iPhone): get the hub's certificate,
    trust it in Settings (a web page isn't allowed to do that part), and a check that turns
@@ -400,11 +404,11 @@ colour and name) unless one needs a look. Tap an item for its menu (Move to, Col
 stack to spread it, a case to open it. Drag an item onto a case, a place, a vehicle or the box;
 hold it over ◀ ▶ to flip places, or ‹ to go up out of a case, while carrying it. Drag a location
 to rearrange the space, or a vehicle onto another location to drive it there. Three zooms (Out,
-Normal, In: icons at 1×, 2×, 3×) and the rest are in **Menu**. Where each location sits and each
-icon's colour live in `layout.json` in the ledger repo (`GET /layout.json`, `POST /api/layout
-{positions: {place: [x, y]}, colours: {id: green|blue|red|gold|metal|null}}`): shared by the
-team, committed, and never an event, so moving an icon never moves anything. The layout needs
-the hub; moves wait offline as on the board.
+Normal, In: icons at 1×, 2×, 3×) are one **Zoom** button (`Zoom 2×`); the rest are in **Menu**. Where each
+location sits and each icon's colour live in `layout.json` in the ledger repo (`GET
+/layout.json`, `POST /api/layout {positions: {place: [x, y]}, colours: {id:
+green|blue|red|gold|metal|null}}`): shared by the team, committed, and never an event, so moving
+an icon never moves anything. The layout needs the hub; moves wait offline as on the board.
 
 **The look.** Pixel art, drawn for this board: one small palette (day and night, following the
 phone's setting), framed panels, a ▶ pointer on the picked card, and readbacks in a text box

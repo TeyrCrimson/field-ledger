@@ -215,9 +215,10 @@ def do_audit(ctx: service.Context, check: bool, read: Read, ask: Ask) -> int:
     """What today's audit still has to check, and what it found wrong. With --check, walk the
     due list and check each one, as on the board's audit screen."""
     if check:
-        walk_audit(ctx, service.audit_report(service.current_state(ctx), ctx.now())[0], read, ask)
+        walk_audit(ctx, service.audit_report(service.current_state(ctx), ctx.now(),
+                                             store.read_zone(ctx.ledger_dir))[0], read, ask)
     state = service.current_state(ctx)
-    due, wrong = service.audit_report(state, ctx.now())
+    due, wrong = service.audit_report(state, ctx.now(), store.read_zone(ctx.ledger_dir))
     by_place: dict[str, list[str]] = {}
     for item in due:
         by_place.setdefault(location_of(state, item), []).append(item)
@@ -337,7 +338,8 @@ def build_parser() -> argparse.ArgumentParser:
                                            "one; 'people link <name>' links their Telegram")
     people.add_argument("add", nargs="?", choices=["add", "link"])
     people.add_argument("name", nargs="*")
-    setting = sub.add_parser("set", help="change a ledger setting, e.g. 'set build_home lab'")
+    setting = sub.add_parser("set", help="change a ledger setting, e.g. 'set build_home lab', "
+                                         "'set timezone Asia/Singapore'")
     setting.add_argument("key", choices=sorted(store.DEFAULT_SETTINGS))
     setting.add_argument("value", nargs="+")
     void = sub.add_parser("void", help="cancel an event (it stays in the log, marked void)")
@@ -435,7 +437,15 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask, read: Rea
             print(f"  {name}")
         return 0
     if args.command == "set":
-        value = canonical_location(" ".join(args.value))
+        value = " ".join(args.value)
+        if args.key == "timezone":          # an IANA name keeps its case: Asia/Singapore
+            try:
+                store.zone(value)
+            except ValueError as error:
+                print(f"REJECT\n  {error}")
+                return 1
+        else:
+            value = canonical_location(value)
         store.write_setting(ctx.ledger_dir, args.key, value)
         print(f"OK\n  {args.key}: {value}")
         return 0

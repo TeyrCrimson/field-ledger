@@ -105,6 +105,7 @@ security labels from a scanner (set by hand for now).
 | `nudge_after` | 1 day (every day counts: no workday or holiday guessing) |
 | `ledger_dir` | `./ledger` |
 | `build_home` | `hq` (ledger repo `settings.json`; `fl set build_home <loc>`) |
+| `timezone` | this machine's zone (`fl set timezone Asia/Singapore`): the audit's day start and a bot's typed clock time |
 
 ## Working here
 

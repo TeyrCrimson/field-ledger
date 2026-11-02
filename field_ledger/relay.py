@@ -27,7 +27,7 @@ import threading
 import urllib.error
 import urllib.request
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 
 from . import hub as hub_module
@@ -105,16 +105,17 @@ def payload_writes(text: str) -> list[tuple[str, dict]]:
     return writes
 
 
-def asked_time(text: str, sent: datetime) -> datetime | None:
+def asked_time(text: str, sent: datetime, zone: tzinfo | None = None) -> datetime | None:
     """A reply to "when?": 'now' (when the move was sent), or a clock time on the day it was
-    sent; a time later than that is taken as the day before. None if it isn't a time."""
+    sent, in the ledger's `timezone` (else the hub's); a time later than that is taken as the
+    day before. None if it isn't a time."""
     text = text.strip().lower()
     if text == "now":
         return sent
     match = CLOCK.match(text)
     if not match or int(match[1]) > 23 or int(match[2]) > 59:
         return None
-    local = sent.astimezone()
+    local = sent.astimezone(zone)
     when = local.replace(hour=int(match[1]), minute=int(match[2]), second=0, microsecond=0)
     return when - timedelta(days=1) if when > local + timedelta(minutes=5) else when
 
@@ -241,7 +242,7 @@ def handle(the_hub, message: dict, pending: dict) -> str | None:
             return handle(the_hub, waiting[1], pending)
         kept = text == waiting[2]
     elif waiting:
-        when = asked_time(text, waiting[1])
+        when = asked_time(text, waiting[1], store.read_zone(the_hub.ledger_dir))
         if when is not None:
             original, _, cmd, was_kept = pending.pop(chat)
             return typed_move(the_hub, name, chat, original, cmd, when, text.lower() == "now", was_kept)
@@ -262,7 +263,7 @@ def handle(the_hub, message: dict, pending: dict) -> str | None:
         return answer_question(the_hub.ledger_dir, cmd, sent)
     if not isinstance(cmd, Move):
         return "Only moves come through here; use the board or `fl` for the rest."
-    when = asked_time(timed[1], sent) if timed else None
+    when = asked_time(timed[1], sent, store.read_zone(the_hub.ledger_dir)) if timed else None
     if when is None:
         pending[chat] = (message, sent, cmd, kept)
         return ASK_TIME

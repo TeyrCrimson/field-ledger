@@ -38,6 +38,7 @@ class State:
     configs: dict[str, Event] = field(default_factory=dict)    # build -> its latest CFG
     owner: Event | None = None                                 # the latest OWNER: who and since when
     containers: set[str] = field(default_factory=set)          # kinds that hold things (settings)
+    vehicles: set[str] = field(default_factory=set)            # kinds that park at a location
     kind_states: dict[str, list[str]] = field(default_factory=dict)  # kind -> its states (settings)
     chain_before: dict[str, list[str]] = field(default_factory=dict)  # move id -> item's ancestors then
     carried: dict[str, set[str]] = field(default_factory=dict)  # move id -> every node it moved

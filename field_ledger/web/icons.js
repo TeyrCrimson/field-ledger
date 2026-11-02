@@ -113,6 +113,52 @@ export const SPRITES = {
       "................",
     ],
   },
+  // A location: a building with a red roof, a door and a window. Every place uses it.
+  place: {
+    key: { ...ramp("red"), w: "white", m: "metal.2", M: "metal.0", D: "blue.0", B: "blue.1",
+           G: "blue.3" },
+    rows: [
+      "................",
+      "................",
+      "......oooo......",
+      ".....ohhbbo.....",
+      "....ohhbbbbo....",
+      "...ohbbbbbbso...",
+      "..ohbbbbbbbbso..",
+      ".osssssssssssso.",
+      "..MwwwwwwwwwwM..",
+      "..MwwwwwwGGwmM..",
+      "..MwDDDDwGGwmM..",
+      "..MwDBBDwwwwmM..",
+      "..MwDBBDwwwwmM..",
+      "..MmDBBDmmmmmM..",
+      "..MMMMMMMMMMMM..",
+      "................",
+    ],
+  },
+  // A van, facing right: the cab window is the only glass. Any vehicle kind without its own
+  // sprite borrows it.
+  VAN: {
+    key: { ...ramp("blue"), g: "metal.3", k: "ink", m: "metal.2" },
+    rows: [
+      "................",
+      "................",
+      "................",
+      "..oooooooo......",
+      ".ohhhhhhhho.....",
+      ".ohbbbbbbbsoo...",
+      ".ohbbbbbbbsogo..",
+      ".ohbbbbbbbsoggo.",
+      ".ohbbbbbbbbbbbo.",
+      ".ohbbbbbbbbbbso.",
+      ".oskkksssskkkso.",
+      "..okmkooookmko..",
+      "...kkk....kkk...",
+      "................",
+      "................",
+      "................",
+    ],
+  },
   // A build: a floppy disk, the old picture for "software". Metal shutter, a written label.
   build: {
     key: { ...ramp("blue"), m: "metal.1", t: "metal.2", l: "metal.3", w: "white" },
@@ -162,10 +208,20 @@ export function problems({ key, rows }) {
 // The kind an icon is looked up by: a build, or the ID's prefix (BAT-12 → BAT).
 export const kindOf = (node) => (node.group === "build" ? "build" : node.id.split("-")[0]);
 
-// An <svg> for this kind, one path per colour. No sprite (or a broken one): a tile with the
-// kind's letters, so a new kind still gets something.
-export function icon(kind) {
-  const sprite = SPRITES[kind];
+// A palette swap (lesson 3): the sprite's main ramp (its base colour's) becomes `colour`'s.
+// The drawing stays; details in other ramps (a bolt, a nub) keep theirs.
+function swapped(sprite, swap) {
+  const main = sprite?.key.b?.split(".")[0];
+  if (!swap || !main || !PALETTE[swap]) return sprite;
+  const key = Object.fromEntries(Object.entries(sprite.key).map(([letter, name]) =>
+    [letter, name.startsWith(`${main}.`) ? name.replace(main, swap) : name]));
+  return { ...sprite, key };
+}
+
+// An <svg> for this kind (swapped to `swap`, a ramp name, if given), one path per colour. No sprite: `fallback`'s,
+// else a tile with the kind's letters, so a new kind still gets something.
+export function icon(kind, swap = null, fallback = null) {
+  const sprite = swapped(SPRITES[kind] ?? SPRITES[fallback], swap);
   const broken = sprite && problems(sprite);
   if (broken?.length) console.warn(`icons.js: ${kind}: ${broken.join("; ")}`);
   if (!sprite || broken.length) {

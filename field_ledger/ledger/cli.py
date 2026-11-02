@@ -151,12 +151,15 @@ STATE_NAME = re.compile(r"[a-z][a-z0-9-]{0,19}$")
 
 
 def do_kind(ctx: service.Context, prefix: str, what: str, values: list[str]) -> int:
-    if what == "container":
+    if what in ("container", "vehicle"):
         if values not in (["yes"], ["no"]):
-            print("REJECT\n  Say yes or no: `fl kind CAS container yes`.")
+            print(f"REJECT\n  Say yes or no: `fl kind {prefix} {what} yes`.")
             return 1
-        store.set_container(ctx.ledger_dir, prefix, values == ["yes"])
-        print(f"OK\n  {prefix} {'holds' if values == ['yes'] else 'does not hold'} things.")
+        yes = values == ["yes"]
+        store.set_kind(ctx.ledger_dir, prefix, what, yes)
+        print(f"OK\n  {prefix} {'holds' if yes else 'does not hold'} things." if what == "container"
+              else f"OK\n  {prefix} {'is' if yes else 'is not'} a vehicle"
+                   + (": it holds things and parks at a location." if yes else "."))
         return 0
     states = list(dict.fromkeys(v.lower() for v in values))
     bad = [s for s in states if not STATE_NAME.match(s)]
@@ -307,10 +310,10 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--name", help="group name (defaults to the prefix)")
     add.add_argument("--container", action="store_true",
                      help="this kind can hold other things (a case, a van, a drone)")
-    kind = sub.add_parser("kind", help="'kind CAS container yes', or a kind's states: "
-                                       "'kind BAT states ready depleted storage damaged'")
+    kind = sub.add_parser("kind", help="'kind CAS container yes', 'kind VAN vehicle yes', or a "
+                                       "kind's states: 'kind BAT states ready depleted storage damaged'")
     kind.add_argument("prefix")
-    kind.add_argument("what", choices=["container", "states"])
+    kind.add_argument("what", choices=["container", "vehicle", "states"])
     kind.add_argument("value", nargs="*")
     condition = sub.add_parser("state", help="what shape an item is in, e.g. 'state BAT-12 depleted'")
     condition.add_argument("item")

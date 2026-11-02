@@ -32,11 +32,14 @@ const panel = drawer("Menu", [["Audit (3)", () => log.push("audit")], null,
                               ["Add a phone", () => {}, new El("canvas")]]);
 const buttons = panel.all("button");
 buttons[0].on.click[0]();
-const dark = buttons.find((b) => b.textContent === "Dark mode");
-dark.on.click[0]();
+const theme = buttons.find((b) => b.textContent === "Dark mode");
+theme.on.click[0]();
+const afterOne = [theme.textContent, document.documentElement.dataset.theme];
+theme.on.click[0]();
+const afterTwo = [theme.textContent, document.documentElement.dataset.theme];
 const lit = (here) => modeSwitch(here).kids.map((span) => [span.textContent, span.className]);
 console.log(JSON.stringify({ labels: buttons.map((b) => b.textContent), log, stored,
-                             theme: document.documentElement.dataset.theme,
+                             afterOne, afterTwo,
                              phoneIcon: buttons[3].kids[0]?.tag ?? null,
                              board: lit("board"), space: lit("space") }));
 """
@@ -47,7 +50,8 @@ def test_the_menu_panel():
                          capture_output=True, text=True, check=True, timeout=10)
     assert json.loads(out.stdout) == {
         "labels": ["Audit (3)", "Undo my last", "Dark mode", "Add a phone", "Close"],  # null skipped
-        "log": ["closed", "audit", "closed"],                            # closes, then runs
-        "stored": {"field-ledger-theme": "dark"}, "theme": "dark",
+        "log": ["closed", "audit"],                     # closes, then runs; the theme stays open
+        "stored": {"field-ledger-theme": "light"},
+        "afterOne": ["Light mode", "dark"], "afterTwo": ["Dark mode", "light"],   # relabels in place
         "phoneIcon": "canvas",                                           # the icon is back
         "board": [["Board", "on"], ["Space", ""]], "space": [["Board", ""], ["Space", "on"]]}

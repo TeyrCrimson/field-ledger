@@ -24,14 +24,20 @@ button.mode span { display: flex; align-items: center; padding: 0 var(--space); 
 button.mode span.on { color: var(--text); background: var(--select); }
 `;
 
-// `items` are [label, run, icon?]; a falsy one is skipped, so a caller can leave one out
-// inline. An icon is a pixel one from icons.js (not an emoji: phones draw those their own way).
+// `items` are [label, run, icon?, { stay }?]; a falsy one is skipped, so a caller can leave
+// one out inline. An icon is a pixel one from icons.js (not an emoji: phones draw those their
+// own way). A `stay` item keeps the panel open and takes the label its run() returns: the
+// theme switches under your eyes, so you see it took (Teyr, 2026-11-02).
 export function drawer(title, items) {
   const dialog = el("dialog", "drawer");
   const list = el("ul", "");
-  for (const [label, run, picture] of items.filter(Boolean)) {
+  for (const [label, run, picture, { stay = false } = {}] of items.filter(Boolean)) {
     const item = el("li", "");
-    const choice = button(label, "", () => { dialog.close(); run(); });
+    const choice = button(label, "", () => {
+      if (stay) return void (choice.textContent = run());
+      dialog.close();
+      run();
+    });
     if (picture) choice.prepend(picture);
     item.append(choice);
     list.append(item);
@@ -62,10 +68,12 @@ export function modeSwitch(here) {
 // Dark mode / Light mode: the other one, kept on this phone (theme.js applies it before the
 // next page draws). Once chosen, it no longer follows the phone's own setting.
 export function themeItem(after = () => {}) {
-  const dark = document.documentElement.dataset.theme === "dark";
-  return [dark ? "Light mode" : "Dark mode", () => {
-    try { localStorage.setItem("field-ledger-theme", dark ? "light" : "dark"); } catch { /* this visit */ }
-    document.documentElement.dataset.theme = dark ? "light" : "dark";
+  const label = () => (document.documentElement.dataset.theme === "dark" ? "Light mode" : "Dark mode");
+  return [label(), () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    try { localStorage.setItem("field-ledger-theme", next); } catch { /* this visit */ }
+    document.documentElement.dataset.theme = next;
     after();
-  }];
+    return label();
+  }, null, { stay: true }];
 }

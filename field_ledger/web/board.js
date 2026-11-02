@@ -261,7 +261,17 @@ function renderHeader() {
     button(`Audit (${latest.audit?.due.length ?? 0})`, "", openAudit),
     button("Undo my last", "", () => act("undo")),
     withIcon(button("Add a phone", "", addPhone), "phone"),
+    button(document.documentElement.dataset.theme === "dark" ? "Light mode" : "Dark mode", "", toggleTheme),
   );
+}
+
+// The other one, kept on this phone (theme.js reads it before the next page draws). Once
+// chosen, it no longer follows the phone's own setting (Teyr, 2026-11-02).
+function toggleTheme() {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  try { localStorage.setItem("field-ledger-theme", next); } catch { /* private mode: this visit */ }
+  document.documentElement.dataset.theme = next;
+  renderHeader();
 }
 
 // A board saved by an older hub has no audit block: nothing to check, rather than a crash.

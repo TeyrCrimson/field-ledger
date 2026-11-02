@@ -10,21 +10,17 @@
 // go up out of a case, while carrying it. Drag a location to rearrange the space (shared: layout.json in the ledger
 // repo, never an event), or a vehicle onto another location to drive it there.
 //
-// ponytail: act / pickName / refresh repeat board.js's; when the space becomes the board
-// (F5), board.js goes and these stay.
-import { CAN_WAIT, Offline, flush, getState, me, post, send, setName, unsynced, waiting } from "./api.js";
-import { addDialog, css as addCss } from "./components/add-form.js";
+// ponytail: act / pickName / refresh repeat board.js's (the header, Menu and its screens are
+// shared: shell.js); when the space becomes the board (F5), board.js goes and these stay.
+import { CAN_WAIT, Offline, flush, getState, me, post, send, setName, waiting } from "./api.js";
 import { confirmDialog, css as confirmCss } from "./components/confirm.js";
-import { drawer, themeItem, css as drawerCss } from "./components/drawer.js";
 import { button, describeWrite, dialogCss, el } from "./components/dom.js";
 import { peoplePicker, css as peopleCss } from "./components/people.js";
 import { LEVELS, box, css as spaceCss, menu, spot, tile } from "./components/space.js";
-import { show, toast, css as toastCss } from "./components/toast.js";
-import { unsyncedBadge, css as unsyncedCss } from "./components/unsynced.js";
 import { icon, kindOf } from "./icons.js";
+import { css as shellCss, header, redrawAudit, say, showDialog, useShell } from "./shell.js";
 
 const REFRESH_MS = 10_000;
-const TOAST_MS = 15_000;
 const FLIP_MS = 600;                                    // hold an item over ◀ ▶ ‹ this long to go there
 const HOLD_MS = 300;                                    // a finger holds this long to pick something up
 const EDGE = 40;                                        // carrying within this of an edge scrolls
@@ -34,8 +30,7 @@ const BOX_ZOOM = 2;                                     // a box stays at Normal
 const COLOURS = ["green", "blue", "red", "gold", "metal"];
 
 const style = document.createElement("style");
-style.textContent = [dialogCss, addCss, confirmCss, peopleCss, toastCss, unsyncedCss, spaceCss,
-                     drawerCss].join("\n");
+style.textContent = [dialogCss, confirmCss, peopleCss, spaceCss, shellCss].join("\n");
 document.head.append(style);
 
 let latest = { places: [], nodes: [], people: [], needs_look: [] };
@@ -56,13 +51,6 @@ function remembered(key, value) {
   return null;
 }
 
-function showDialog(dialog) {
-  dialog.addEventListener("close", () => dialog.remove());
-  document.body.append(dialog);
-  dialog.showModal();
-}
-
-const say = (text, options = {}) => show($("toasts"), toast(text, options), TOAST_MS);
 
 // --- what's where, and how it's doing ------------------------------------------------
 
@@ -486,6 +474,7 @@ async function act(command, body = {}) {
     return render();
   }
   if (answer.verdict === "CONFIRM") {
+    redrawAudit();                                      // a cancelled question keeps its row
     return showDialog(confirmDialog(answer.messages,
                                     () => act(command, { ...answer.body, confirmed: true })));
   }
@@ -496,6 +485,7 @@ async function act(command, body = {}) {
                            onUndo: CAN_WAIT.has(command) ? () => act("undo") : null });
   }
   await refresh();
+  redrawAudit();
 }
 
 function arrived(command, body, answer) {
@@ -532,22 +522,10 @@ function setZoom(level) {
   renderHeader();
 }
 
-// The general menu, as a handheld RPG's start menu: one button in the bar, everything that
-// isn't about one item behind it, so the space keeps the screen.
-function generalMenu() {
-  showDialog(drawer("Menu", [                         // the board's, most-used first
-    ["Undo my last", () => act("undo")],
-    ["+ Add items", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))],
-    ...ZOOMS.map((name, at) => [`Zoom: ${name}${at + 1 === zoom ? " ◀" : ""}`, () => setZoom(at + 1)]),
-    ["The board (columns)", () => { location.href = "./"; }],
-    [me.name ? `You: ${me.name}` : "Who are you?", () => pickName(false)],
-    themeItem(),
-  ]));
-}
-
 function renderHeader() {
-  $("actions").replaceChildren(...(unsynced() ? [unsyncedBadge(unsynced())] : []),
-                               button("Menu", "primary", generalMenu));
+  // Zoom is one button: each tap goes a size up, and from In back to Out (Teyr, 2026-11-02).
+  const nextZoom = zoom % ZOOMS.length + 1;
+  $("actions").replaceChildren(...header(button(`Zoom: ${ZOOMS[zoom - 1]}`, "", () => setZoom(nextZoom))));
   document.documentElement.style.setProperty("--bar-height", `${$("bar").offsetHeight}px`);
 }
 
@@ -591,6 +569,7 @@ document.addEventListener("contextmenu", (event) => {
 });
 document.addEventListener("pointerdown", (event) => { if (event.target.closest("#box")) onPress(event); });
 document.addEventListener("click", (event) => { if (event.target.closest("#box")) onTap(event); });
+useShell({ here: "space", latest: () => latest, act, pickName });
 renderHeader();
 await refresh();
 if (!me.name || !latest.people.includes(me.name)) pickName(true);

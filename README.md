@@ -288,9 +288,11 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
   people's changes until you drop or cancel, and the status line says so.
 - **Readback:** every write shows `✓ BAT-03 · Blue 6S · was in truck → van` with **Undo**.
   "Undo my last" in the Menu works for 10 minutes.
-- **Menu** (the header's one button) opens a panel from the left, most-used first: Audit, Undo
-  my last, + Add items, The space, Owner, You, Add a phone, Dark mode / Light mode. The space
-  has the same panel. **Dark mode / Light mode** switches every page, and the phone remembers it.
+- **The header** is the same on the board and the space: **Board | Space** (the page you're on
+  lit; tap to go to the other), the space's **Zoom** (each tap a size up, then back to Out), and
+  **Menu**, a panel from the left, most-used first and the same on both: Audit, Undo my last,
+  + Add items, Owner, You, Add a phone, Dark mode / Light mode. **Dark mode / Light mode**
+  switches every page, and the phone remembers it.
   Until it's tapped, the board follows the phone's own setting.
 - **Asked first:** the same rules as `fl`. A new ID-shaped place or a fixed location asks
   before it logs; a refusal says why.
@@ -402,11 +404,11 @@ colour and name) unless one needs a look. Tap an item for its menu (Move to, Col
 stack to spread it, a case to open it. Drag an item onto a case, a place, a vehicle or the box;
 hold it over ◀ ▶ to flip places, or ‹ to go up out of a case, while carrying it. Drag a location
 to rearrange the space, or a vehicle onto another location to drive it there. Three zooms (Out,
-Normal, In: icons at 1×, 2×, 3×) and the rest are in **Menu**. Where each location sits and each
-icon's colour live in `layout.json` in the ledger repo (`GET /layout.json`, `POST /api/layout
-{positions: {place: [x, y]}, colours: {id: green|blue|red|gold|metal|null}}`): shared by the
-team, committed, and never an event, so moving an icon never moves anything. The layout needs
-the hub; moves wait offline as on the board.
+Normal, In: icons at 1×, 2×, 3×) are one **Zoom** button; the rest are in **Menu**. Where each
+location sits and each icon's colour live in `layout.json` in the ledger repo (`GET
+/layout.json`, `POST /api/layout {positions: {place: [x, y]}, colours: {id:
+green|blue|red|gold|metal|null}}`): shared by the team, committed, and never an event, so moving
+an icon never moves anything. The layout needs the hub; moves wait offline as on the board.
 
 **The look.** Pixel art, drawn for this board: one small palette (day and night, following the
 phone's setting), framed panels, a ▶ pointer on the picked card, and readbacks in a text box

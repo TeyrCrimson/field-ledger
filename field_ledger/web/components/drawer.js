@@ -19,15 +19,21 @@ dialog.drawer[open] { animation: drawer-in 0.12s steps(3); }   /* three pixel-ar
 dialog.drawer ul { display: grid; gap: var(--space); margin: 0; padding: 0; list-style: none; }
 dialog.drawer li button { width: 100%; text-align: left; }
 dialog.drawer li.close { margin-top: calc(var(--space) * 2); }
+button.mode { display: inline-flex; gap: 0; padding: 0; overflow: hidden; }
+button.mode span { display: flex; align-items: center; padding: 0 var(--space); color: var(--muted); }
+button.mode span.on { color: var(--text); background: var(--select); }
 `;
 
-// `items` are [label, run]; a falsy one is skipped, so a caller can leave one out inline.
+// `items` are [label, run, icon?]; a falsy one is skipped, so a caller can leave one out
+// inline. An icon is a pixel one from icons.js (not an emoji: phones draw those their own way).
 export function drawer(title, items) {
   const dialog = el("dialog", "drawer");
   const list = el("ul", "");
-  for (const [label, run] of items.filter(Boolean)) {
+  for (const [label, run, picture] of items.filter(Boolean)) {
     const item = el("li", "");
-    item.append(button(label, "", () => { dialog.close(); run(); }));
+    const choice = button(label, "", () => { dialog.close(); run(); });
+    if (picture) choice.prepend(picture);
+    item.append(choice);
     list.append(item);
   }
   const close = el("li", "close");
@@ -39,6 +45,18 @@ export function drawer(title, items) {
     if (event.clientX > box.right || event.clientY > box.bottom) dialog.close();
   });
   return dialog;
+}
+
+// Board | Space: one switch on both pages, the page you're on lit; a tap goes to the other
+// (Teyr, 2026-11-02: a hybrid toggle reads better than a menu item on each page).
+export function modeSwitch(here) {
+  const other = here === "board" ? "space.html" : "./";
+  const node = button("", "mode", () => { location.href = other; });
+  node.setAttribute("aria-label", here === "board" ? "Board, switch to the space" : "Space, switch to the board");
+  for (const [name, page] of [["Board", "board"], ["Space", "space"]]) {
+    node.append(el("span", page === here ? "on" : "", name));
+  }
+  return node;
 }
 
 // Dark mode / Light mode: the other one, kept on this phone (theme.js applies it before the

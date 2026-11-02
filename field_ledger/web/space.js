@@ -525,7 +525,9 @@ function setZoom(level) {
 function renderHeader() {
   // Zoom is one button: each tap goes a size up, and from In back to Out (Teyr, 2026-11-02).
   const nextZoom = zoom % ZOOMS.length + 1;
-  $("actions").replaceChildren(...header(button(`Zoom: ${ZOOMS[zoom - 1]}`, "", () => setZoom(nextZoom))));
+  const zoomButton = button(`Zoom ${zoom}×`, "", () => setZoom(nextZoom));   // 1× 2× 3×: short enough for one row
+  zoomButton.setAttribute("aria-label", `Zoom ${ZOOMS[zoom - 1]}; tap for ${ZOOMS[nextZoom - 1]}`);
+  $("actions").replaceChildren(...header(zoomButton));
   document.documentElement.style.setProperty("--bar-height", `${$("bar").offsetHeight}px`);
 }
 

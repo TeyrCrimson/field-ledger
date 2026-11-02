@@ -37,16 +37,17 @@ export function showDialog(dialog) {
 
 export const say = (text, options = {}) => show(toasts, toast(text, options), TOAST_MS);
 
-// The header: what needs seeing now, the switch, the page's own buttons (`own`), and Menu.
+// The header: Menu first, on the side its panel opens from (Teyr, 2026-11-02), the switch,
+// the page's own buttons (`own`), then what needs seeing now: writes waiting.
 export function header(...own) {
   const latest = page.latest();
   return [
+    button("Menu", "primary", openMenu),
+    modeSwitch(page.here),
+    ...own,
     ...(unsynced() ? [unsyncedBadge(unsynced())] : []),
     ...(unsynced() && latest.relay?.bot
       ? [button("Send through Telegram", "", () => showDialog(relayDialog(latest.relay.bot, waiting())))] : []),
-    modeSwitch(page.here),
-    ...own,
-    button("Menu", "primary", openMenu),
   ];
 }
 

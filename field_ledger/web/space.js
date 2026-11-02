@@ -15,6 +15,7 @@
 import { CAN_WAIT, Offline, flush, getState, me, post, send, setName, unsynced, waiting } from "./api.js";
 import { addDialog, css as addCss } from "./components/add-form.js";
 import { confirmDialog, css as confirmCss } from "./components/confirm.js";
+import { drawer, themeItem, css as drawerCss } from "./components/drawer.js";
 import { button, describeWrite, dialogCss, el } from "./components/dom.js";
 import { peoplePicker, css as peopleCss } from "./components/people.js";
 import { LEVELS, box, css as spaceCss, menu, spot, tile } from "./components/space.js";
@@ -33,7 +34,8 @@ const BOX_ZOOM = 2;                                     // a box stays at Normal
 const COLOURS = ["green", "blue", "red", "gold", "metal"];
 
 const style = document.createElement("style");
-style.textContent = [dialogCss, addCss, confirmCss, peopleCss, toastCss, unsyncedCss, spaceCss].join("\n");
+style.textContent = [dialogCss, addCss, confirmCss, peopleCss, toastCss, unsyncedCss, spaceCss,
+                     drawerCss].join("\n");
 document.head.append(style);
 
 let latest = { places: [], nodes: [], people: [], needs_look: [] };
@@ -533,12 +535,13 @@ function setZoom(level) {
 // The general menu, as a handheld RPG's start menu: one button in the bar, everything that
 // isn't about one item behind it, so the space keeps the screen.
 function generalMenu() {
-  showDialog(menu("Menu", [
-    [me.name ? `You: ${me.name}` : "Who are you?", () => pickName(false)],
-    ["Add items", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))],
+  showDialog(drawer("Menu", [                         // the board's, most-used first
     ["Undo my last", () => act("undo")],
+    ["+ Add items", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))],
     ...ZOOMS.map((name, at) => [`Zoom: ${name}${at + 1 === zoom ? " ◀" : ""}`, () => setZoom(at + 1)]),
     ["The board (columns)", () => { location.href = "./"; }],
+    [me.name ? `You: ${me.name}` : "Who are you?", () => pickName(false)],
+    themeItem(),
   ]));
 }
 

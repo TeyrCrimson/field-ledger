@@ -15,12 +15,12 @@ import { CAN_WAIT, Offline, flush, getState, me, phoneSetup, post, send, setName
 import { actionBar, css as actionCss } from "./components/actionbar.js";
 import { addDialog, css as addCss } from "./components/add-form.js";
 import { addPhoneDialog, css as addPhoneCss } from "./components/add-phone.js";
+import { drawer, themeItem, css as drawerCss } from "./components/drawer.js";
 import { auditDialog, css as auditCss } from "./components/audit.js";
 import { column, css as columnCss } from "./components/column.js";
 import { confirmDialog, css as confirmCss } from "./components/confirm.js";
 import { button, describeWrite, dialogCss } from "./components/dom.js";
 import { itemCard, markCard, unmarkCard, css as cardCss } from "./components/item-card.js";
-import { icon } from "./icons.js";
 import { needsLook, css as needsCss } from "./components/needs-look.js";
 import { nudgeBanner, ownerDialog, css as ownerCss } from "./components/owner.js";
 import { peoplePicker, css as peopleCss } from "./components/people.js";
@@ -33,7 +33,8 @@ const TOAST_MS = 15_000;
 
 const style = document.createElement("style");
 style.textContent = [dialogCss, columnCss, cardCss, actionCss, addCss, confirmCss, peopleCss,
-                     toastCss, needsCss, unsyncedCss, addPhoneCss, auditCss, ownerCss, relayCss].join("\n");
+                     toastCss, needsCss, unsyncedCss, addPhoneCss, auditCss, ownerCss, relayCss,
+                     drawerCss].join("\n");
 document.head.append(style);
 
 let latest = { places: [], nodes: [], people: [], needs_look: [] };
@@ -244,34 +245,28 @@ function pickName(required) {
   showDialog(dialog);
 }
 
-// A button with a pixel icon in front (not an emoji: every phone draws those its own way).
-function withIcon(node, kind) {
-  node.prepend(icon(kind));
-  return node;
-}
-
+// The header keeps what needs seeing now (writes waiting, a way to send them); the rest is in
+// the Menu, most-used first. The order is a guess until there's field use to go by.
 function renderHeader() {
   $("actions").replaceChildren(
     ...(unsynced() ? [unsyncedBadge(unsynced())] : []),
     ...(unsynced() && latest.relay?.bot
       ? [button("Send through Telegram", "", () => showDialog(relayDialog(latest.relay.bot, waiting())))] : []),
-    button(me.name ? `You: ${me.name}` : "Who are you?", "", () => pickName(false)),
-    button("+ Add items", "", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))),
-    button(`Owner: ${latest.owner?.name || "nobody"}`, "", openOwner),
-    button(`Audit (${latest.audit?.due.length ?? 0})`, "", openAudit),
-    button("Undo my last", "", () => act("undo")),
-    withIcon(button("Add a phone", "", addPhone), "phone"),
-    button(document.documentElement.dataset.theme === "dark" ? "Light mode" : "Dark mode", "", toggleTheme),
+    button("Menu", "primary", openMenu),
   );
 }
 
-// The other one, kept on this phone (theme.js reads it before the next page draws). Once
-// chosen, it no longer follows the phone's own setting (Teyr, 2026-11-02).
-function toggleTheme() {
-  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  try { localStorage.setItem("field-ledger-theme", next); } catch { /* private mode: this visit */ }
-  document.documentElement.dataset.theme = next;
-  renderHeader();
+function openMenu() {
+  showDialog(drawer("Menu", [
+    [`Audit (${latest.audit?.due.length ?? 0})`, openAudit],
+    ["Undo my last", () => act("undo")],
+    ["+ Add items", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))],
+    ["The space", () => { location.href = "space.html"; }],
+    [`Owner: ${latest.owner?.name || "nobody"}`, openOwner],
+    [me.name ? `You: ${me.name}` : "Who are you?", () => pickName(false)],
+    ["Add a phone", addPhone],
+    themeItem(),
+  ]));
 }
 
 // A board saved by an older hub has no audit block: nothing to check, rather than a crash.

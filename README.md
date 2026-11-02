@@ -287,8 +287,10 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
   where it went in the bar at the bottom. While a card is picked, the board holds other
   people's changes until you drop or cancel, and the status line says so.
 - **Readback:** every write shows `✓ BAT-03 · Blue 6S · was in truck → van` with **Undo**.
-  "Undo my last" in the header works for 10 minutes.
-- **Dark mode / Light mode** in the header switches the board, and the phone remembers it.
+  "Undo my last" in the Menu works for 10 minutes.
+- **Menu** (the header's one button) opens a panel from the left, most-used first: Audit, Undo
+  my last, + Add items, The space, Owner, You, Add a phone, Dark mode / Light mode. The space
+  has the same panel. **Dark mode / Light mode** switches every page, and the phone remembers it.
   Until it's tapped, the board follows the phone's own setting.
 - **Asked first:** the same rules as `fl`. A new ID-shaped place or a fixed location asks
   before it logs; a refusal says why.
@@ -338,7 +340,7 @@ phone must use it over HTTPS: browsers only keep a page working offline on a sec
 hub has its own certificate authority for that, and joining works like linking WhatsApp to a
 computer:
 
-1. On the laptop, tap **Add a phone** (or use the QR code `serve --lan` prints).
+1. On the laptop, open **Menu** and tap **Add a phone** (or use the QR code `serve --lan` prints).
 2. Point the phone's camera at the code and open the link.
 3. The phone shows three steps for its own kind (Android or iPhone): get the hub's certificate,
    trust it in Settings (a web page isn't allowed to do that part), and a check that turns

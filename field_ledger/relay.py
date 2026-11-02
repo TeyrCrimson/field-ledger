@@ -34,7 +34,8 @@ from . import hub as hub_module
 from .ledger import store
 from .ledger.model import At, Move, Where
 from .ledger.parse import ParseError, parse
-from .ledger.state import ancestors, fold, items_at, resolve, where_text
+from .ledger.ids import canonical_item, canonical_location, suggest
+from .ledger.state import State, ancestors, fold, items_at, resolve, where_text
 from .ledger.validate import canonical_destination, node_id, not_found
 
 API = "https://api.telegram.org"
@@ -47,6 +48,15 @@ BARE_TIME = re.compile(r"\s+(now|\d{1,2}[:.h]\d{2})\s*$", re.IGNORECASE)
 CLOCK = re.compile(r"^(\d{1,2})[:.h]?(\d{2})$")
 TYPED_IDS = uuid.UUID("6f1c2a7e-5d3b-4c8e-9a1f-0b7e4d2c9a63")   # namespace: chat + message -> id
 ASK_TIME = "When did that happen? Reply with a time (14:30) or 'now'. A rough time beats none."
+# Telegram's command menu: typing / lists these (setMyCommands). A bot sees nothing until a
+# message is sent, so this is the only as-you-type help it can give (Teyr, 2026-11-02).
+COMMANDS = [{"command": "move", "description": "MOVE BAT-12 > van now: log a move"},
+            {"command": "where", "description": "WHERE BAT-12: where it is, and who put it there"},
+            {"command": "at", "description": "AT van: what's there"}]
+EXAMPLES = {"MOVE": "MOVE BAT-12 > van now", "WHERE": "WHERE BAT-12", "AT": "AT van"}
+SLASH = re.compile(r"^/(move|where|at)(?:@\w+)?(?=\s|$)", re.IGNORECASE)
+SUGGESTED = "did-you-mean"          # a pending "Did you mean …?", waiting for a yes
+YES = {"yes", "y", "ok"}
 
 
 class RelayError(RuntimeError):
@@ -109,6 +119,44 @@ def asked_time(text: str, sent: datetime) -> datetime | None:
     return when - timedelta(days=1) if when > local + timedelta(minutes=5) else when
 
 
+def unslash(text: str) -> str:
+    """`/move BAT-12 > van`, the command menu's form (with `@bot` in a group), reads as
+    `MOVE BAT-12 > van`."""
+    return SLASH.sub(lambda m: m[1].upper(), text, count=1)
+
+
+def did_you_mean(line: str, state: State) -> str | None:
+    """The line it was probably meant to be, or None: a near-miss command word, item or place
+    put right, by the same closest-match `fl` uses for items. A place nobody has used that is
+    close to one in use is how a typo quietly became a new place ("vn" for van; "truck now"
+    on 2026-10-31). An ID-shaped place is left to the hub, which already asks about those."""
+    word, _, rest = line.strip().partition(" ")
+    if word.upper() not in (*EXAMPLES, "MOV"):
+        word = suggest(word.upper(), set(EXAMPLES), cutoff=0.6)
+    if word is None or not rest.strip():
+        return None
+    places = state.locations | state.fixed
+
+    def item(raw: str) -> str:
+        return raw if node_id(raw, state) else suggest(canonical_item(raw) or raw, set(state.items)) or raw
+
+    def place(raw: str) -> str:
+        known = node_id(raw, state) or canonical_item(raw) or canonical_location(raw) in places
+        return raw if known else suggest(canonical_location(raw), places) or raw
+
+    if word.upper() in ("MOVE", "MOV") and ">" in rest:
+        left, dst = (part.strip() for part in rest.split(">", 1))
+        thing, _, src = left.partition(" ")
+        fixed = f"{word} {item(thing)}{' ' + src if src else ''} > {place(dst)}"
+    elif word.upper() == "WHERE":
+        fixed = f"{word} {item(rest.strip())}"
+    elif word.upper() == "AT":
+        fixed = f"{word} {place(rest.strip())}"
+    else:
+        return None
+    return fixed if fixed.split() != line.split() else None
+
+
 # --- handling one message ----------------------------------------------------------------
 
 def short_time(when: datetime, now: datetime) -> str:
@@ -157,10 +205,12 @@ def relay_writes(the_hub, name: str, writes: list[tuple[str, dict]]) -> str:
 
 
 def typed_move(the_hub, name: str, chat: int, message: dict, cmd: Move, when: datetime,
-               exact: bool) -> str:
+               exact: bool, kept: bool = False) -> str:
+    """`kept`: the sender was offered a "Did you mean" and sent theirs again, which answers
+    the hub's own question about a new place too, so it isn't held on Needs a look."""
     body = {"id": str(uuid.uuid5(TYPED_IDS, f"{chat}:{message['message_id']}")),
             "item": cmd.item, "to": cmd.dst, "actor": name, "device": f"telegram-{message['from']['id']}",
-            "occurred_at": when.isoformat(), "queued": True}
+            "occurred_at": when.isoformat(), "queued": True, **({"confirmed": True} if kept else {})}
     answer = hub_module.write(the_hub, "move", body, time_source="" if exact else "prompted")
     if answer.get("held"):
         return f"Needs a look on the board: {' '.join(answer['messages'])}"
@@ -183,14 +233,29 @@ def handle(the_hub, message: dict, pending: dict) -> str | None:
     writes = payload_writes(text)
     if writes:
         return relay_writes(the_hub, name, writes)
-    if chat in pending:
-        when = asked_time(text, pending[chat][1])
+    text, kept = unslash(text), False
+    waiting = pending.get(chat)
+    if waiting and waiting[0] == SUGGESTED:     # yes takes the suggestion; resent keeps yours
+        pending.pop(chat)
+        if text.lower() in YES:
+            return handle(the_hub, waiting[1], pending)
+        kept = text == waiting[2]
+    elif waiting:
+        when = asked_time(text, waiting[1])
         if when is not None:
-            original, _, cmd = pending.pop(chat)
-            return typed_move(the_hub, name, chat, original, cmd, when, text.lower() == "now")
+            original, _, cmd, was_kept = pending.pop(chat)
+            return typed_move(the_hub, name, chat, original, cmd, when, text.lower() == "now", was_kept)
+    if text.upper() in EXAMPLES:                # a bare /move from the menu
+        return f"Send it like this: {EXAMPLES[text.upper()]}"
     timed = AT_TIME.search(text) or (text[:4].upper() == "MOVE" and BARE_TIME.search(text))
+    line = text[:timed.start()] if timed else text
+    fixed = None if kept else did_you_mean(line, fold(store.read_events(the_hub.ledger_dir)))
+    if fixed:
+        meant = fixed + text[len(line):]
+        pending[chat] = (SUGGESTED, {**message, "text": meant}, text)
+        return f"Did you mean: {meant}\nReply yes to send that. Send yours again to keep it as typed."
     try:
-        cmd = parse(text[:timed.start()] if timed else text)
+        cmd = parse(line)
     except ParseError as error:
         return f"{error}\nI read MOVE <ITEM> > <PLACE>, WHERE <ITEM> and AT <PLACE>."
     if isinstance(cmd, (Where, At)):
@@ -199,9 +264,9 @@ def handle(the_hub, message: dict, pending: dict) -> str | None:
         return "Only moves come through here; use the board or `fl` for the rest."
     when = asked_time(timed[1], sent) if timed else None
     if when is None:
-        pending[chat] = (message, sent, cmd)
+        pending[chat] = (message, sent, cmd, kept)
         return ASK_TIME
-    return typed_move(the_hub, name, chat, message, cmd, when, timed[1].lower() == "now")
+    return typed_move(the_hub, name, chat, message, cmd, when, timed[1].lower() == "now", kept)
 
 
 # --- polling -----------------------------------------------------------------------------
@@ -241,6 +306,10 @@ def start(the_hub, token: str, api: str = API) -> threading.Event:
                 if not the_hub.relay_bot:          # the board's "send through Telegram" needs it
                     the_hub.relay_bot = call(token, "getMe", {}, api)["username"]
                     print(f"  Relay: on, as @{the_hub.relay_bot}.", flush=True)
+                    try:
+                        call(token, "setMyCommands", {"commands": COMMANDS}, api)
+                    except RelayError:          # the menu is a nicety; moves work without it
+                        pass
                 poll_once(the_hub, token, pending, api)
                 quiet = False
             except RelayError as error:

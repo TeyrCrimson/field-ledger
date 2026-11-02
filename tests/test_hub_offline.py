@@ -145,6 +145,16 @@ def test_a_held_question_is_logged_as_the_phone_sent_it(board):
         "by": "teyr", "at": clock().isoformat(), "how": "logged"}
 
 
+def test_a_queued_write_already_confirmed_is_logged_not_held(board):
+    """Asked on the phone, answered yes, then queued while the hub was away: the hub logs it
+    and still says CONFIRM (it was asked). It mustn't also wait on Needs a look (2026-11-02)."""
+    base, ledger, clock = board
+    body = stamped(clock, item="BAT-01", to="DRN-09")          # a new ID-shaped place: asked
+    status, answer = post(base, "move", **body, queued=True, confirmed=True)
+    assert answer["event"] == body["id"] and needs_look(base) == []
+    assert location_of(state(ledger), "BAT-01") == "drn-09"
+
+
 def test_a_late_settled_write_keeps_its_place_in_the_phones_order(board):
     """Held at seq 1, then the phone moved the item again at seq 2: logging the held one
     later must not make it the latest."""

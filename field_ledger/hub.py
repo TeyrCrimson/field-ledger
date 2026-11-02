@@ -318,7 +318,9 @@ def write(hub: Hub, command: str, body: dict, time_source: str = "") -> dict:
         if not queued:
             raise
         answer = {"verdict": "REJECT", "messages": [str(error)], "event": None, "readback": ""}
-    if queued and answer["verdict"] in ("REJECT", "CONFIRM"):
+    # A confirmed write is logged and still answers CONFIRM (it was asked, and said yes):
+    # only a write that logged nothing waits on Needs a look.
+    if queued and answer["verdict"] in ("REJECT", "CONFIRM") and not answer["event"]:
         return hold(hub, command, body, answer, time_source)
     return answer
 

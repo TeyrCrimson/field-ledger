@@ -13,7 +13,7 @@ import subprocess
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from pathlib import Path
 
 from . import store
@@ -192,15 +192,17 @@ def submit_state(ctx: Context, item: str, value: str, reason: str = "",
     return write(ctx, verdict, "STATE", event_id, (), item=item, dst=value, note=reason)
 
 
-def day_start(now: datetime) -> datetime:
-    """A deployment day starts at local midnight on the machine asking (the hub, or the laptop
-    running `fl`). Every day counts, as with kit left in a vehicle."""
-    return now.astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+def day_start(now: datetime, zone: tzinfo | None = None) -> datetime:
+    """A deployment day starts at midnight in the ledger's `timezone`, else on the machine
+    asking (the hub, or the laptop running `fl`). Every day counts, as with kit left in a
+    vehicle."""
+    return now.astimezone(zone).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def audit_report(state: State, now: datetime) -> tuple[list[str], list[Event]]:
+def audit_report(state: State, now: datetime,
+                 zone: tzinfo | None = None) -> tuple[list[str], list[Event]]:
     """(what's due, today's mismatches): the audit screen and `fl audit` read the same."""
-    since = day_start(now)
+    since = day_start(now, zone)
     return audit_due(state, since), mismatches(state, since)
 
 

@@ -89,7 +89,7 @@ def test_strangers_get_nothing_and_a_code_links_once(the_hub, tmp_path):
     assert relay.handle(the_hub, message(f"/start {code}", user=99), {}) == \
         "Hello, teyr. Moves you send here go into the ledger."
     assert relay.handle(the_hub, message(f"/start {code}", user=100), {}).startswith("I don't know you")
-    assert relay.handle(the_hub, stranger, {}) == "BAT-01: truck"
+    assert relay.handle(the_hub, stranger, {}).startswith("BAT-01: truck\n")
 
 
 def test_fl_people_link(tmp_path, capsys):
@@ -180,8 +180,60 @@ def test_a_number_at_the_end_with_no_colon_stays_in_the_place(the_hub):
     assert location_of(fold(events(the_hub)), "BAT-03") == "gate 1430"          # places are kept in lower case
 
 
+def test_where_names_the_chain_and_who_put_each_link_there(the_hub):
+    """"I know it's in Case A, but who shifted Case A?" (Teyr, 2026-11-02)."""
+    sent = datetime(2026, 10, 17, 3, 0, tzinfo=timezone.utc)
+    add = lambda *argv: fl(["--ledger-dir", str(the_hub.ledger_dir), "--db", str(the_hub.db),
+                            "--actor", "teyr", *argv], now=lambda: sent)
+    assert add("add", "CAS", "1", "--at", "truck", "--container") == 0
+    relay.handle(the_hub, message("MOVE BAT-01 > CAS-01 now", sent=sent), {})
+    reply = relay.handle(the_hub, message("WHERE BAT-01", message_id=2, sent=sent), {})
+    at = f"{sent.astimezone():%H:%M}"                                          # today: no date
+    assert reply == f"BAT-01: CAS-01 at truck\nPut there: BAT-01 by Yoeng, {at} · CAS-01 by teyr, {at}"
+
+
+@pytest.mark.parametrize("typed, read", [
+    ("/move BAT-01 > van now", "MOVE BAT-01 > van now"), ("/where@casio_ledger_bot BAT-01", "WHERE BAT-01"),
+    ("/AT van", "AT van"), ("/start abc", "/start abc"), ("/moved", "/moved")])
+def test_the_menus_slash_forms_read_as_the_words(typed, read):
+    assert relay.unslash(typed) == read
+
+
+def test_a_bare_command_from_the_menu_gets_an_example(the_hub):
+    assert relay.handle(the_hub, message("/move"), {}) == "Send it like this: MOVE BAT-12 > van now"
+
+
+@pytest.mark.parametrize("line, meant", [
+    ("MVOE BAT-01 > site-b", "MOVE BAT-01 > site-b"),      # the command word
+    ("WHERE BTA-01", "WHERE BAT-01"),                      # an item
+    ("MOVE BAT-01 > trck", "MOVE BAT-01 > truck"),         # a place nobody uses, close to one in use
+    ("move bat-1 > site-b", None),                         # nothing wrong: case and padding are fine
+    ("MOVE BAT-01 > DRN-03", None),                        # ID-shaped: the hub already asks
+    ("MOVE BAT-01 > warehouse", None),                     # new, and close to nothing
+    ("AT site-b", None),
+])
+def test_did_you_mean(the_hub, line, meant):
+    assert relay.did_you_mean(line, fold(events(the_hub))) == meant
+
+
+def test_yes_sends_the_suggestion_and_keeps_the_time(the_hub):
+    pending = {}
+    reply = relay.handle(the_hub, message("MOVE BAT-01 > site-v now"), pending)
+    assert reply.startswith("Did you mean: MOVE BAT-01 > site-b now\n")
+    assert relay.handle(the_hub, message("yes", message_id=2), pending).startswith("✓ BAT-01")
+    assert location_of(fold(events(the_hub)), "BAT-01") == "site-b" and pending == {}
+
+
+def test_sending_yours_again_keeps_it_as_typed(the_hub):
+    """site-c may really be new: one resend says so, and it's logged as typed."""
+    pending = {}
+    assert relay.handle(the_hub, message("MOVE BAT-02 > site-c now"), pending).startswith("Did you mean")
+    assert relay.handle(the_hub, message("MOVE BAT-02 > site-c now", message_id=2), pending).startswith("✓ BAT-02")
+    assert location_of(fold(events(the_hub)), "BAT-02") == "site-c"
+
+
 def test_questions_and_everything_else(the_hub):
-    assert relay.handle(the_hub, message("where bat-1"), {}) == "BAT-01: truck"
+    assert relay.handle(the_hub, message("where bat-1"), {}).startswith("BAT-01: truck\n")
     assert relay.handle(the_hub, message("AT site-b"), {}) == "At site-b: CAM-01"
     assert relay.handle(the_hub, message("RENAME truck > lorry"), {}).startswith("Only moves come through")
     assert relay.handle(the_hub, message("hello"), {}).startswith("unknown command 'HELLO'")
@@ -193,10 +245,12 @@ class FakeTelegram(BaseHTTPRequestHandler):
     updates: list = []
     sent: list = []
     offsets: list = []
+    calls: list = []
 
     def do_POST(self):
         method = self.path.rsplit("/", 1)[1]
         params = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        self.calls.append((method, params))
         if method == "getUpdates":
             self.offsets.append(params["offset"])
             result = [u for u in self.updates if u["update_id"] >= params["offset"]]
@@ -228,9 +282,28 @@ def test_polling_answers_and_never_handles_an_update_twice(the_hub):
     finally:
         server.shutdown()
     assert FakeTelegram.offsets == [0, 12]
-    assert [s["text"] for s in FakeTelegram.sent] == ["BAT-01: truck",
-                                                      "✓ BAT-01 · Battery · was in truck → van"]
+    assert [s["text"].split("\n")[0] for s in FakeTelegram.sent] == [
+        "BAT-01: truck", "✓ BAT-01 · Battery · was in truck → van"]
     assert FakeTelegram.sent[1]["reply_to_message_id"] == 2
+
+
+def test_starting_registers_the_command_menu(the_hub):
+    """Typing / in the chat lists /move, /where and /at: the only as-you-type help a bot can
+    give, since it sees nothing until a message is sent (Teyr, 2026-11-02)."""
+    FakeTelegram.updates, FakeTelegram.calls = [], []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), FakeTelegram)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    stop = relay.start(the_hub, "TOKEN", f"http://127.0.0.1:{server.server_address[1]}")
+    try:
+        for _ in range(100):
+            if any(method == "setMyCommands" for method, _ in FakeTelegram.calls):
+                break
+            threading.Event().wait(0.02)
+    finally:
+        stop.set()
+        server.shutdown()
+    commands = next(p for m, p in FakeTelegram.calls if m == "setMyCommands")["commands"]
+    assert [c["command"] for c in commands] == ["move", "where", "at"]
 
 
 def test_no_internet_is_a_relay_error_not_a_crash(the_hub):

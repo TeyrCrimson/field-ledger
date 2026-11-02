@@ -1,10 +1,12 @@
-// The readback after a write ("✓ BAT-12 · Blue 6S · was in Case A → van") with its Undo,
-// or why nothing was logged. The readback is how a wrong ID gets caught, so it stays a while.
+// The readback after a write ("✓ BAT-12 · Blue 6S · was in CAS-01 in VAN-01 at hq → site-b")
+// with its Undo, or why nothing was logged. The readback is how a wrong ID gets caught, so it
+// stays a while.
 //
 // A text box at the bottom, as in a handheld RPG: the text types out (very fast), then a ▼
 // says it's all there. Tap it while it types to show the rest at once; tap again to put it
-// away. At most three are on screen; the next waits and shows when one is tapped away, so
-// a burst of writes never buries the board.
+// away. The tap is the only close (no ×, Teyr 2026-10-30); a keyboard focuses the box and
+// presses Enter or Space. At most three are on screen; the next waits and shows when one is
+// tapped away, so a burst of writes never buries the board.
 import { button, el } from "./dom.js";
 
 const SHOWN = 3;
@@ -71,7 +73,7 @@ export function toast(text, { error = false, messages = [], onUndo = null } = {}
   line.append(el("span", "sr", [text, ...messages].join(" ")), typed);
   node.append(line);
   if (onUndo) node.append(button("Undo", "", () => { node.dismiss(); onUndo(); }));
-  node.append(button("×", "", () => node.dismiss()));
+  node.tabIndex = 0;
   node.dismiss = () => node.remove();                 // until show() takes it over
 
   let shown = 0;
@@ -96,6 +98,11 @@ export function toast(text, { error = false, messages = [], onUndo = null } = {}
     if (event.target.closest("button")) return;
     if (node.classList.contains("done")) node.dismiss();
     else finish();
+  });
+  node.addEventListener("keydown", (event) => {
+    if (event.target !== node || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();                           // Space would scroll the board
+    node.click();
   });
   return node;
 }

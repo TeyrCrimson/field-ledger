@@ -126,10 +126,11 @@ Status: **v0** pads to 2 digits (fixed). `id_digits` is **planned**.
 **On a phone (planned):** tap an item, drag it to where it went. Under 2 seconds.
 **From the CLI or chat (v0):** the text grammar below.
 
-Every move prints a **readback** with the item's previous location:
+Every move prints a **readback** with where the item was, innermost first: the case you'd
+open, then where that case is.
 
 ```
-✓ BAT-12 · Blue 6S · was in Case A → van        [Undo]
+✓ BAT-12 · Blue 6S · was in CAS-01 in VAN-01 at hq → site-b        [Undo]
 ```
 
 If the "was in" doesn't match what's in your hand, you have the wrong ID: tap Undo.
@@ -265,7 +266,7 @@ fl owner ivan            # OWNER teyr → Ivan (a name from the People list)
 | Piece | What it is |
 |---|---|
 | **Network** | A travel router (preferred) or a phone hotspot. Laptops join as normal clients. Don't use a laptop hotspot |
-| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation), and set its clock and timezone to the site's: the audit's midnight and a time typed to the bot (`14:30`) are both read on the hub's clock. **v0**: serves the board and takes its writes, including ones that waited on a phone (see "The hub" below) |
+| **Hub** | One laptop runs `field-ledger serve`: it serves the phone board, writes events and commits them. Give it a fixed address on the router (DHCP reservation), and set its clock to the right time. The audit's midnight and a time typed to the bot (`14:30`) are read in the ledger's `timezone` (`fl set timezone Asia/Singapore`), or the hub's own zone if that isn't set. **v0**: serves the board and takes its writes, including ones that waited on a phone (see "The hub" below) |
 | **Phones** | Open the board in a browser and add it to the home screen. Moves queue on the phone if the hub is unreachable and send when it's back. **v0**: yes; and on a phone added by QR code the board opens with no hub too (see "Phones offline") |
 | **Relay** | When phones can't reach the hub (company or public Wi-Fi, or no hub on site), moves go through the Telegram bot. The hub fetches them over outbound HTTPS. The bot carries moves; it is never the record. **v0**: yes (see "The relay") |
 | **Backup** | The hub pushes the ledger repo when it has internet |
@@ -467,7 +468,13 @@ has internet. The bot carries writes; it is never the record.
   it, as exact as a phone's own time, so it isn't. `MOVE BAT-12 > van @14:30`
   gives the time at once, and so does `… van now` or `… van 14:30`. A number with no colon
   stays part of the place (`Gate 1430`). Only moves are typed this way.
-- **Questions:** `WHERE BAT-12`, `AT van`.
+- **Questions:** `WHERE BAT-12`, `AT van`. `WHERE` names the chain and who put each link there:
+  `BAT-12: CAS-01 in VAN-01 at hq` / `Put there: BAT-12 by Teyr, 14:02 · CAS-01 by Yoeng, 13:40 · VAN-01 by Ivan, 31 Oct 09:15`.
+- **Help while typing:** type `/` in the chat for the bot's menu (`/move`, `/where`, `/at`, each
+  with an example); `/move BAT-12 > van now` works as well as `MOVE …`. A near-miss command,
+  item or place gets `Did you mean: MOVE BAT-12 > van now`: reply `yes` to send that, or send
+  yours again to keep it as typed (a place that's really new). A bot sees nothing until a
+  message is sent, so the menu is the only help it can give while you type.
 
 A hub with no internet keeps working and tries Telegram again every 30 seconds. Telegram keeps
 unfetched messages for 24 hours; after that, recover them from a chat export with `fl import`.
@@ -707,8 +714,9 @@ Never commit them. The bot's token: `FL_TELEGRAM_TOKEN`, or `~/.config/field-led
 | `nudge_after` | `1` day | When an unresolved ⚠ nudges the field-ops owner. Every day counts: no guessing at workdays or public holidays |
 | `ledger_dir` | `./ledger` | Where the ledger's own repo lives |
 | `build_home` | `hq` | Where a build is before its first deploy. **v0**: `fl set build_home <location>`; stored in the ledger repo's `settings.json`, so every device shares it |
+| `timezone` | this machine's | The site's zone: when the audit's day starts, and how a time typed to the bot (`14:30`) is read. **v0**: `fl set timezone Asia/Singapore` (an IANA name; one this machine doesn't know is refused); shared like `build_home` |
 
-**v0**: only `build_home` can be changed (`fl set`). `ledger_dir` comes from `--ledger-dir` or
+**v0**: only `build_home` and `timezone` can be changed (`fl set`). `ledger_dir` comes from `--ledger-dir` or
 `FL_LEDGER_DIR`. `undo_minutes` and `conflict_window` are in force at their defaults but fixed.
 `nudge_after` is in force at 1 day but fixed. `id_digits` is **planned**.
 

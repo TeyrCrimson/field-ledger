@@ -31,7 +31,7 @@ import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -43,7 +43,7 @@ from .ledger import service, store
 from .ledger.ids import canonical_location, is_prefix
 from .ledger.kit import Group, plan_more
 from .ledger.model import Kind, Move, Verdict
-from .ledger.state import State, ancestors, deployed_sha, fold, location_of
+from .ledger.state import State, ancestors, deployed_sha, fold, location_of, where_text
 from .ledger.validate import holds_things, is_vehicle
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -79,7 +79,8 @@ class BadRequest(ValueError):
 # --- reading -----------------------------------------------------------------------
 
 def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
-             people: list[str] | None = None, needs_look: list[dict] | None = None) -> dict:
+             people: list[str] | None = None, needs_look: list[dict] | None = None,
+             zone: tzinfo | None = None) -> dict:
     """The replayed state in the shape the board reads. This shape is the contract
     between the hub and any front end (README "The hub"); the front end is free to change."""
     nodes = []
@@ -106,8 +107,8 @@ def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
         nodes.append(entry)
     places = ({n["location"] for n in nodes if n["location"]}
               | {n for n in state.fixed if n not in state.where})
-    due, wrong = service.audit_report(state, now)
-    audit = {"since": service.day_start(now).isoformat(), "due": due,
+    due, wrong = service.audit_report(state, now, zone)
+    audit = {"since": service.day_start(now, zone).isoformat(), "due": due,
              "mismatches": [{"item": e.item, "logged": e.src, "found": e.dst, "by": e.actor,
                              "at": e.ts.isoformat(), "event": e.id} for e in wrong]}
     return {"generated_at": now.isoformat(), "places": sorted(places), "nodes": nodes,
@@ -128,7 +129,8 @@ def board_state(ledger_dir: Path, now: datetime | None = None) -> dict:
     state.vehicles = store.read_vehicles(ledger_dir)
     state.kind_states = store.read_kind_states(ledger_dir)
     return snapshot(state, service.open_conflicts(state), now or utc_now(),
-                    store.read_people(ledger_dir), store.needs_a_look(ledger_dir))
+                    store.read_people(ledger_dir), store.needs_a_look(ledger_dir),
+                    store.read_zone(ledger_dir))
 
 
 # --- writing -------------------------------------------------------------------------
@@ -188,7 +190,7 @@ def api_move(ctx: service.Context, body: dict) -> dict:
                                   confirmed=body.get("confirmed") is True, event_id=body.get("id"))
     e = outcome.event
     return reply(outcome, e and (f"✓ {e.item} · {before.items.get(e.item, '')} · "
-                                 f"was in {location_of(before, e.item) or '—'} → {e.dst}"))
+                                 f"was in {where_text(before, e.item) or '—'} → {e.dst}"))
 
 
 def api_undo(ctx: service.Context, body: dict) -> dict:
@@ -349,7 +351,9 @@ def write(hub: Hub, command: str, body: dict, time_source: str = "") -> dict:
         if not queued:
             raise
         answer = {"verdict": "REJECT", "messages": [str(error)], "event": None, "readback": ""}
-    if queued and answer["verdict"] in ("REJECT", "CONFIRM"):
+    # A confirmed write is logged and still answers CONFIRM (it was asked, and said yes):
+    # only a write that logged nothing waits on Needs a look.
+    if queued and answer["verdict"] in ("REJECT", "CONFIRM") and not answer["event"]:
         return hold(hub, command, body, answer, time_source)
     return answer
 

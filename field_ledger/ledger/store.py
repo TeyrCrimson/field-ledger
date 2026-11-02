@@ -10,7 +10,8 @@ import json
 import secrets
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
 
 from ..git_source import run_git
@@ -142,8 +143,8 @@ DEFAULT_LEDGER_DIR = Path("ledger")
 EVENTS_DIR = "events"
 SETTINGS_FILE = "settings.json"
 LAYOUT_FILE = "layout.json"
-# ponytail: one key so far; id_digits, undo_minutes etc. move here when they become settable
-DEFAULT_SETTINGS = {"build_home": "hq"}
+# ponytail: id_digits, undo_minutes etc. move here when they become settable
+DEFAULT_SETTINGS = {"build_home": "hq", "timezone": ""}   # "": this machine's zone
 
 
 def events_dir(ledger_dir: Path) -> Path:
@@ -199,6 +200,25 @@ def write_setting(ledger_dir: Path, key: str, value: str) -> None:
 def kinds_with(ledger_dir: Path, flag: str) -> set[str]:
     kinds = stored_settings(ledger_dir).get("kinds", {})
     return {prefix for prefix, kind in kinds.items() if kind.get(flag)}
+
+
+def zone(name: str) -> tzinfo:
+    """An IANA zone (`Asia/Singapore`). Raises ValueError if this machine doesn't know it."""
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError(f"No timezone '{name}' here. Use a name like Asia/Singapore.") from None
+
+
+def read_zone(ledger_dir: Path) -> tzinfo | None:
+    """The site's timezone: when the audit's day starts, and how a time typed to the bot is
+    read. None means this machine's own. Set once per ledger, so a hub laptop left on UTC
+    doesn't put both 8 hours off in Singapore (Teyr, 2026-11-01)."""
+    name = read_settings(ledger_dir)["timezone"]
+    try:
+        return zone(name) if name else None
+    except ValueError:              # ponytail: a hand-edited name falls back to the machine's
+        return None
 
 
 def read_containers(ledger_dir: Path) -> set[str]:

@@ -91,6 +91,14 @@ def makes_cycle(state: State, item: str, dst: str) -> bool:
     return dst == item or item in ancestors(state, dst)
 
 
+def where_text(state: State, item: str) -> str:
+    """Where `item` is, innermost first: 'CAS-01 in VAN-01 at hq', or just 'truck'. The case
+    you'd open, then where that case is: the top place alone leaves you hunting for it
+    (Teyr, 2026-11-02). '' for a node not placed yet."""
+    *inside, place = ancestors(state, item) or [""]
+    return " in ".join(inside) + (" at " if inside else "") + place
+
+
 def location_of(state: State, item: str) -> str:
     """Top of the chain. '' for a node that has not been placed anywhere yet."""
     chain = ancestors(state, item)

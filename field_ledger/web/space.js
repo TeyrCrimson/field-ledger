@@ -6,8 +6,8 @@
 // Tap a location or vehicle: the space slides it to the left edge and its box opens. In a
 // box, items that look the same stack (same kind, colour and name) unless one needs a look.
 // Tap an item for its menu; tap a stack to spread it; tap a case to open its box. Drag an
-// item onto a case, a place or vehicle, or the box; hold it over ◀ ▶ to flip places while
-// carrying it. Drag a location to rearrange the space (shared: layout.json in the ledger
+// item onto a case, a place or vehicle, or the box; hold it over ◀ ▶ to flip places, or ‹ to
+// go up out of a case, while carrying it. Drag a location to rearrange the space (shared: layout.json in the ledger
 // repo, never an event), or a vehicle onto another location to drive it there.
 //
 // ponytail: act / pickName / refresh repeat board.js's; when the space becomes the board
@@ -24,7 +24,7 @@ import { icon, kindOf } from "./icons.js";
 
 const REFRESH_MS = 10_000;
 const TOAST_MS = 15_000;
-const FLIP_MS = 600;                                    // hold an item over ◀ ▶ this long to flip
+const FLIP_MS = 600;                                    // hold an item over ◀ ▶ ‹ this long to go there
 const HOLD_MS = 300;                                    // a finger holds this long to pick something up
 const EDGE = 40;                                        // carrying within this of an edge scrolls
 const EDGE_SPEED = 8;                                   // pixels a frame
@@ -357,7 +357,9 @@ function onPress(event) {
     }
     if (flipper && !flipTimer) {
       flipper.classList.add("armed");
-      flipTimer = setTimeout(() => { flipTimer = null; park(); flip(Number(flipper.dataset.flip)); }, FLIP_MS);
+      const go = flipper.dataset.flip === "up" ? () => openBox(flipper.dataset.up)
+                                                : () => flip(Number(flipper.dataset.flip));
+      flipTimer = setTimeout(() => { flipTimer = null; park(); go(); }, FLIP_MS);
     } else if (!flipper && flipTimer) {
       clearTimeout(flipTimer);
       flipTimer = null;

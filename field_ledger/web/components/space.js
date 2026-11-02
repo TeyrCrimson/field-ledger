@@ -206,9 +206,9 @@ export function tile({ image, id, count, kind, group, level, container }) {
   return node;
 }
 
-// The box's frame: ◀ title ▶ ×, and a body the caller fills. In a case, ‹ goes up a level,
-// and an item dropped on it goes up a level too: out of the case, into what holds the case
-// (`up`). Teyr expected that, and the drop used to land on nothing (2026-11-02).
+// The box's frame: ◀ title ▶ ×, and a body the caller fills. In a case, ‹ goes up a level
+// (`up`: what holds the case). Carrying an item, hold it over ‹ as over ◀ ▶: the box goes up
+// a level and you keep carrying, so it drops anywhere there (Teyr, 2026-11-02).
 export function box({ title, onFlip, onTitle, onBack, up, onClose }) {
   const node = el("section", "box");
   node.setAttribute("aria-label", title);
@@ -216,7 +216,7 @@ export function box({ title, onFlip, onTitle, onBack, up, onClose }) {
   const back = button(onBack ? "‹" : "◀", "flip", onBack ?? (() => onFlip(-1)));
   back.setAttribute("aria-label", onBack ? "Back" : "Previous place");
   if (!onBack) back.dataset.flip = "-1";
-  else if (up) back.dataset.drop = up;
+  else if (up) Object.assign(back.dataset, { flip: "up", up });
   const next = button("▶", "flip", () => onFlip(1));
   next.dataset.flip = "1";
   next.setAttribute("aria-label", "Next place");

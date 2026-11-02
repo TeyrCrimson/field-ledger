@@ -43,3 +43,11 @@ def test_a_choice_wins_and_otherwise_the_phone_decides_live():
         "system_light": ["light", "dark"], "system_dark": ["dark", "light"],   # follows the phone
         "chose_light": ["light", "light"], "chose_dark": ["dark", "dark"],     # a choice sticks
         "private_mode": ["dark", "light"], "junk": ["dark", "light"]}
+
+
+def test_every_page_sets_its_theme_before_it_draws():
+    """tokens.css keys the night palette on data-theme, which only theme.js sets: a page
+    without it is always light. The space page missed it when #37 and #50 merged."""
+    for page in sorted(hub.WEB_DIR.glob("*.html")):
+        head = page.read_text(encoding="utf-8").split("</head>")[0]
+        assert '<script src="theme.js"></script>' in head, page.name

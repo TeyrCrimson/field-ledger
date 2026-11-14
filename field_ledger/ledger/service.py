@@ -399,7 +399,8 @@ def add_items(ctx: Context, planned: list[PlannedAdd], event_id: str | None = No
     ctx, existing = one_command(ctx), set(current_state(ctx).items)
     new = [p for p in planned if p.item not in existing]
     ids = batch_ids(event_id, len(new))
-    written = [make_event(ctx, "ADD", ids[n], ahead=n, item=p.item, dst=p.location, note=p.name)
+    written = [make_event(ctx, "ADD", ids[n], ahead=n, item=p.item, dst=p.location, note=p.name,
+                          serial=p.serial)
                for n, p in enumerate(new)]
     store.add(ctx.conn, ctx.ledger_dir, written)      # one commit for the whole kit
     return written

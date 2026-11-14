@@ -9,10 +9,10 @@ Kit file (CSV, header required):
 import csv
 import io
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .ids import canonical_location, expand_group, is_prefix
-from .state import State
+from .state import State, serial_holder
 
 NUMBER_RE = re.compile(r"-(\d+)$")
 
@@ -31,6 +31,7 @@ class PlannedAdd:
     item: str
     name: str
     location: str
+    serial: str = ""
 
 
 def parse_group(row: dict) -> Group:
@@ -76,3 +77,20 @@ def plan_more(group: Group, state: State) -> list[PlannedAdd]:
     start = next_number(group.prefix, state)
     return [PlannedAdd(item, group.name, group.location)
             for item in expand_group(group.prefix, start, group.count)]
+
+
+def serial_problem(group: Group, serial: str, state: State) -> str:
+    """Why `fl add ... --serial` can't go ahead, or '' if it can. One serial names one
+    physical thing, so it goes on exactly one new item, and never on a second item."""
+    if not serial.strip():
+        return "The serial is empty."
+    if group.count != 1:
+        return f"A serial names one item: add 1, not {group.count}."
+    holder = serial_holder(state, serial)
+    return f"Serial '{serial.strip()}' is already on {holder}." if holder else ""
+
+
+def plan_serial(group: Group, serial: str, state: State) -> list[PlannedAdd]:
+    """`fl add <prefix> 1 --serial <SN>`: the next item, carrying the serial on its ADD.
+    Check `serial_problem` first."""
+    return [replace(p, serial=serial.strip()) for p in plan_more(group, state)]

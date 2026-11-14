@@ -97,6 +97,8 @@ def snapshot(state: State, open_: dict[str, tuple[str, str]], now: datetime,
         states = state.kind_states.get(node.split("-")[0], []) if node not in state.fixed else []
         if states and group != "build":
             entry |= {"state": state.conditions.get(node, ""), "states": states}
+        if node in state.serials:           # the camera registry's join key; Find searches it
+            entry["serial"] = state.serials[node]
         if node in open_:
             entry["conflict"] = {"latest": open_[node][0], "other": open_[node][1]}
         last = state.last_event.get(node)

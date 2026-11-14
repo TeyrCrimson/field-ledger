@@ -9,6 +9,7 @@ import { addPhoneDialog, css as addPhoneCss } from "./components/add-phone.js";
 import { auditDialog, css as auditCss } from "./components/audit.js";
 import { button } from "./components/dom.js";
 import { drawer, modeSwitch, themeItem, css as drawerCss } from "./components/drawer.js";
+import { findDialog, css as findCss } from "./components/find.js";
 import { ownerDialog, css as ownerCss } from "./components/owner.js";
 import { relayDialog, css as relayCss } from "./components/relay.js";
 import { show, toast, css as toastCss } from "./components/toast.js";
@@ -16,8 +17,8 @@ import { unsyncedBadge, css as unsyncedCss } from "./components/unsynced.js";
 import { icon } from "./icons.js";
 
 const TOAST_MS = 15_000;
-export const css = [addCss, addPhoneCss, auditCss, drawerCss, ownerCss, relayCss, toastCss,
-                    unsyncedCss].join("\n");
+export const css = [addCss, addPhoneCss, auditCss, drawerCss, findCss, ownerCss, relayCss,
+                    toastCss, unsyncedCss].join("\n");
 
 let page = { here: "board", latest: () => ({}), act: async () => {}, pickName: () => {} };
 export const useShell = (it) => { page = it; };
@@ -55,6 +56,7 @@ export function header(...own) {
 function openMenu() {
   const latest = page.latest(), act = page.act;
   showDialog(drawer("Menu", [
+    ["Find an item", () => showDialog(findDialog(latest.nodes ?? [], latest.places ?? []))],
     [`Audit (${latest.audit?.due.length ?? 0})`, openAudit],
     ["Undo my last", () => act("undo")],
     ["+ Add items", () => showDialog(addDialog(latest.places, (fields) => act("add", fields)))],

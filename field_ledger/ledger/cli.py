@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import service, store
 from .ids import canonical_location, is_prefix
-from .kit import Group, plan_kit, plan_more, read_kit
+from .kit import Group, plan_kit, plan_more, plan_serial, read_kit, serial_problem
 from .model import At, Event, Kind, Move, Rename, Verdict, Void, Where
 from .parse import ParseError, parse
 from .state import ancestors, items_at, location_of
@@ -31,7 +31,9 @@ def describe(e: Event) -> str:
     if e.kind == "MOVE":
         return f"{e.item}  {e.src or '—'} > {e.dst}" + (f"  @{e.sha[:7]}" if e.sha else "")
     if e.kind == "ADD":
-        return f"{e.item}  added at {e.dst} ({e.note})" if e.dst else f"{e.item}  added ({e.note})"
+        sn = f"  sn {e.serial}" if e.serial else ""
+        return (f"{e.item}  added at {e.dst} ({e.note}){sn}" if e.dst
+                else f"{e.item}  added ({e.note}){sn}")
     if e.kind == "VOID":
         return f"void {e.ref[:8]}: {e.note}"
     if e.kind == "RESOLVE":
@@ -107,7 +109,8 @@ def do_where(ctx: service.Context, cmd: Where) -> int:
     other = service.open_conflicts(state).get(item, ("", ""))[1]
     flag = f"  ⚠ or {other}" if other else ""
     condition = f" · {state.conditions[item]}" if item in state.conditions else ""
-    print(f"{item}: {location}{held}{condition}{flag}\n"
+    serial = f" · sn {state.serials[item]}" if item in state.serials else ""
+    print(f"{item}: {location}{held}{condition}{serial}{flag}\n"
           f"  last: {render_event(state.last_event[item])}")
     if other:
         print(f"  Two devices disagree. Settle it: fl resolve {item} <{location} or {other}>")
@@ -310,6 +313,8 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--name", help="group name (defaults to the prefix)")
     add.add_argument("--container", action="store_true",
                      help="this kind can hold other things (a case, a van, a drone)")
+    add.add_argument("--serial", help="the maker's serial, for adding one item (count 1); "
+                                      "the camera registry joins on it")
     kind = sub.add_parser("kind", help="'kind CAS container yes', 'kind VAN vehicle yes', or a "
                                        "kind's states: 'kind BAT states ready depleted storage damaged'")
     kind.add_argument("prefix")
@@ -419,7 +424,13 @@ def dispatch(ctx: service.Context, args: argparse.Namespace, ask: Ask, read: Rea
     if args.command == "add":
         group = Group(args.prefix.upper(), args.name or args.prefix.upper(), args.count,
                       canonical_location(args.at), True if args.container else None)
-        return do_kit(ctx, [group], plan_more)
+        if args.serial is None:
+            return do_kit(ctx, [group], plan_more)
+        problem = serial_problem(group, args.serial, service.current_state(ctx))
+        if problem:
+            print(f"REJECT\n  {problem}")
+            return 1
+        return do_kit(ctx, [group], lambda g, s: plan_serial(g, args.serial, s))
     if args.command == "import":
         return do_import(ctx, args.file)
     if args.command == "resolve":

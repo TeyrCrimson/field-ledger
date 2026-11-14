@@ -117,6 +117,12 @@ IDs are `KIND-NN`: a 3-letter prefix and a number (`BAT-07`, `GAZ-03`).
   (`container` is `yes`, `no`, or blank to leave the kind as it is). Re-running the same file changes nothing;
   raising a count only adds the missing items. `fl add BAT 2 --at truck` adds BAT-13, BAT-14.
 
+  A camera (or anything with a maker's serial) can carry it from the start:
+  `fl add CAM 1 --at hq --serial SN-0042` adds CAM-04 with that serial on its ADD event, and
+  `fl where CAM-04` shows it. The camera registry joins on the serial, so it never needs ledger
+  names. One item per serial: a count above 1, or a serial already on another item, is refused.
+  The serial is set once; to fix a wrong one, void the ADD and add the item again.
+
 Status: **v0** pads to 2 digits (fixed). `id_digits` is **planned**.
 
 ---

@@ -295,8 +295,10 @@ field-ledger serve --web-dir ~/designs/board   # try a design without touching t
 - **Readback:** every write shows `✓ BAT-03 · Blue 6S · was in truck → van` with **Undo**.
   "Undo my last" in the Menu works for 10 minutes.
 - **The header** is the same on the board and the space: **Menu**, a panel from the left (the
-  side its button is on), most-used first and the same on both: Audit, Undo my last,
-  + Add items, Owner, You, Add a phone, Dark mode / Light mode. Then **Board | Space** (the
+  side its button is on), most-used first and the same on both: Find an item, Audit, Undo my
+  last, + Add items, Owner, You, Add a phone, Dark mode / Light mode. **Find an item** takes an
+  ID (`bat12` finds BAT-12), part of a name, or a serial, and lists matching items and places
+  with where each is, innermost first (`CAS-01 in VAN-01 at hq`). Then **Board | Space** (the
   page you're on lit; tap to go to the other), and on the space **Zoom 2×** (each tap a size
   up, 1× → 2× → 3×, then back to 1×). **Dark mode / Light mode** switches every page, and the
   phone remembers it; until it's tapped, every page follows the phone's own setting.

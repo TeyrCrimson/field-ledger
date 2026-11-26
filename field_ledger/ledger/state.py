@@ -35,6 +35,7 @@ class State:
     aliases: dict[str, str] = field(default_factory=dict)      # old location -> new
     labels: dict[str, str] = field(default_factory=dict)       # build -> security label (SEC)
     conditions: dict[str, str] = field(default_factory=dict)   # item -> its state (STATE)
+    serials: dict[str, str] = field(default_factory=dict)      # item -> serial, from its ADD
     configs: dict[str, Event] = field(default_factory=dict)    # build -> its latest CFG
     owner: Event | None = None                                 # the latest OWNER: who and since when
     containers: set[str] = field(default_factory=set)          # kinds that hold things (settings)
@@ -99,6 +100,13 @@ def where_text(state: State, item: str) -> str:
     return " in ".join(inside) + (" at " if inside else "") + place
 
 
+def serial_holder(state: State, serial: str) -> str:
+    """The item already carrying `serial` (case and spacing ignored), or ''. A serial on two
+    items would make the camera registry's join ambiguous."""
+    key = serial.strip().casefold()
+    return next((item for item, s in state.serials.items() if s.casefold() == key), "")
+
+
 def location_of(state: State, item: str) -> str:
     """Top of the chain. '' for a node that has not been placed anywhere yet."""
     chain = ancestors(state, item)
@@ -109,6 +117,8 @@ def apply(state: State, event: Event) -> None:
     """Apply one live event. Location fields are stored raw; resolved in `finish`."""
     if event.kind == "ADD":
         state.items[event.item] = event.note
+        if event.serial:
+            state.serials[event.item] = event.serial
         if "fixed" in event.flags:
             state.fixed.add(event.item)
     # ponytail: a cycle can only arrive from two offline devices; it is skipped here

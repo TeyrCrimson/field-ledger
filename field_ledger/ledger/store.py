@@ -35,11 +35,12 @@ CREATE TABLE IF NOT EXISTS events (
     batch  TEXT NOT NULL DEFAULT '',
     time_source TEXT NOT NULL DEFAULT '',
     flags  TEXT NOT NULL DEFAULT '',
-    recorded_at TEXT NOT NULL DEFAULT ''
+    recorded_at TEXT NOT NULL DEFAULT '',
+    serial TEXT NOT NULL DEFAULT ''
 );
 """
 COLUMNS = ("id", "ts", "device", "seq", "actor", "kind", "item", "src", "dst", "ref", "note",
-           "sha", "batch", "time_source", "flags", "recorded_at")
+           "sha", "batch", "time_source", "flags", "recorded_at", "serial")
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -84,7 +85,8 @@ def to_row(event: Event) -> tuple:
     return (event.id, event.ts.isoformat(), event.device, event.seq, event.actor, event.kind,
             event.item, event.src, event.dst, event.ref, event.note, event.sha, event.batch,
             event.time_source,
-            ",".join(event.flags), event.recorded_at.isoformat() if event.recorded_at else "")
+            ",".join(event.flags), event.recorded_at.isoformat() if event.recorded_at else "",
+            event.serial)
 
 
 def from_row(row: tuple) -> Event:
@@ -330,6 +332,8 @@ def telegram_people(ledger_dir: Path) -> dict[str, str]:
 def to_json(event: Event) -> str:
     data = dict(zip(COLUMNS, to_row(event)))
     data["flags"] = list(event.flags)        # a list, not the DB's comma string
+    if not event.serial:                     # only an ADD that was given one carries it, so
+        del data["serial"]                   # every other event file reads as it always did
     return json.dumps(data, indent=2, sort_keys=True) + "\n"
 
 

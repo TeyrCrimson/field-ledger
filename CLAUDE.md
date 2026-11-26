@@ -61,7 +61,9 @@ security labels from a scanner (set by hand for now).
 - Event fields: id, type, item, to, logged_by, moved_by (defaults to logged_by), actor_source
   (device | telegram | import), device, occurred_at, recorded_at, time_source (device |
   prompted | import), source (+ original text for imports), sha (build deploys: head commit),
-  batch (shared by the events one command wrote; undo takes them back together).
+  batch (shared by the events one command wrote; undo takes them back together), serial (ADD
+  only, optional, set once: the camera registry's join key; one item per serial; written to the
+  event file only when set, Teyr 2026-11-10).
 
 ## Behaviour rules
 

@@ -79,3 +79,5 @@ class Event:
     time_source: str = ""     # '' = device clock; 'import' (or 'prompted'): approximate, wider ⚠ window
     flags: tuple[str, ...] = field(default=())
     recorded_at: datetime | None = None   # when the hub (or `fl`) wrote it; None before F3
+    serial: str = ""          # ADD only: the maker's serial, set once. The camera registry's
+                              # join key, so registry rows never need ledger item names.
